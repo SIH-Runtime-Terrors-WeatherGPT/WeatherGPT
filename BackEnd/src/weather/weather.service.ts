@@ -103,6 +103,7 @@ export class WeatherService {
       date: intent.date,
     });
     const targetDate = resolvedTemporal.date || new Date().toISOString().split('T')[0];
+    intent.date = targetDate;
 
     // Step 4: OpenWeather Geocoding (with Redis caching)
     const geo = await this.geocodeLocation(intent.location, intent.country || undefined);
@@ -336,10 +337,11 @@ export class WeatherService {
     forecast: OWForecastResponse,
     targetDate: string,
   ): WeatherData {
-    const dayItems = (forecast.list ?? []).filter((item) =>
+    let dayItems = (forecast.list ?? []).filter((item) =>
       item.dt_txt?.startsWith(targetDate),
     );
 
+    let effectiveDate = targetDate;
     let temp: number;
     let tempHigh: number;
     let tempLow: number;
@@ -361,6 +363,25 @@ export class WeatherService {
       condition = dayItems[0].weather?.[0]?.description ?? current.weather?.[0]?.description ?? 'unknown';
       windSpeed = dayItems[0].wind?.speed ?? current.wind?.speed ?? 0;
       humidity = dayItems[0].main?.humidity ?? current.main?.humidity ?? 0;
+    } else if (forecast.list && forecast.list.length > 0) {
+      // If targetDate is beyond OpenWeather 5-day forecast, use closest available forecast date
+      const availableDates = Array.from(new Set(forecast.list.map((i) => i.dt_txt?.split(' ')[0]))).filter(Boolean) as string[];
+      effectiveDate = availableDates[availableDates.length - 1] || targetDate;
+      dayItems = forecast.list.filter((item) => item.dt_txt?.startsWith(effectiveDate));
+      const targetItems = dayItems.length > 0 ? dayItems : forecast.list;
+
+      const temps = targetItems.map((i) => i.main.temp);
+      const highTemps = targetItems.map((i) => i.main.temp_max);
+      const lowTemps = targetItems.map((i) => i.main.temp_min);
+      const pops = targetItems.map((i) => i.pop ?? 0);
+
+      tempHigh = Math.max(...highTemps);
+      tempLow = Math.min(...lowTemps);
+      temp = temps.reduce((a, b) => a + b, 0) / temps.length;
+      rainProb = Math.max(...pops);
+      condition = targetItems[0].weather?.[0]?.description ?? current.weather?.[0]?.description ?? 'unknown';
+      windSpeed = targetItems[0].wind?.speed ?? current.wind?.speed ?? 0;
+      humidity = targetItems[0].main?.humidity ?? current.main?.humidity ?? 0;
     } else {
       temp = current.main.temp;
       tempHigh = current.main.temp_max;
@@ -380,7 +401,7 @@ export class WeatherService {
 
     return {
       location: locationName,
-      date: targetDate,
+      date: effectiveDate,
       temperature: Math.round(temp * 10) / 10,
       temperatureHigh: Math.round(tempHigh * 10) / 10,
       temperatureLow: Math.round(tempLow * 10) / 10,

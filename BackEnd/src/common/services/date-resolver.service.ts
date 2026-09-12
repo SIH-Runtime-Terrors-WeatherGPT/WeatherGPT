@@ -39,7 +39,7 @@ export class DateResolverService {
     }
 
     const tzParts = this.getTimezoneDateParts(referenceDate, input.timezone);
-    const normalizedExpr = rawDateExpr.toLowerCase();
+    const normalizedExpr = rawDateExpr.toLowerCase().replace(/^(?:on|for|at|during)\s+/i, '').trim();
 
     let resolvedDateStr: string | null = null;
     let inferredStartTime: string | null = null;
@@ -70,6 +70,14 @@ export class DateResolverService {
     } else if (normalizedExpr.includes('tomorrow')) {
       const target = new Date(tzParts.year, tzParts.month, tzParts.day + 1);
       resolvedDateStr = this.formatDate(target);
+    } else if (/\b(?:after|in)\s+(\d{1,2})\s+days?\b|\b(\d{1,2})\s+days?\s+(?:later|from now|after)\b/i.test(normalizedExpr)) {
+      // Relative days e.g. "after 4 days", "in 4 days", "4 days later", "4 days from now"
+      const relativeMatch = normalizedExpr.match(/\b(?:after|in)\s+(\d{1,2})\s+days?\b|\b(\d{1,2})\s+days?\s+(?:later|from now|after)\b/i);
+      if (relativeMatch) {
+        const daysOffset = parseInt(relativeMatch[1] || relativeMatch[2], 10);
+        const target = new Date(tzParts.year, tzParts.month, tzParts.day + daysOffset);
+        resolvedDateStr = this.formatDate(target);
+      }
     } else if (normalizedExpr.includes('weekend')) {
       // 4. "this weekend" / "weekend"
       // If current day is Sunday (0), "this weekend" refers to today
@@ -90,6 +98,70 @@ export class DateResolverService {
         const isoMatch = normalizedExpr.match(/\b\d{4}-\d{2}-\d{2}\b/);
         if (isoMatch) {
           resolvedDateStr = isoMatch[0];
+        } else {
+          // 7. Specific date formats e.g. "19 sep", "19th september", "sep 19", "19/09", "19-09"
+          const monthNamesMap: Record<string, number> = {
+            jan: 0, january: 0,
+            feb: 1, february: 1,
+            mar: 2, march: 2,
+            apr: 3, april: 3,
+            may: 4,
+            jun: 5, june: 5,
+            jul: 6, july: 6,
+            aug: 7, august: 7,
+            sep: 8, sept: 8, september: 8,
+            oct: 9, october: 9,
+            nov: 10, november: 10,
+            dec: 11, december: 11,
+          };
+
+          // Pattern A: "19 sep", "19th september", "19 september 2026"
+          const dayMonthMatch = normalizedExpr.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)(?:\s+(\d{4}))?\b/i);
+          if (dayMonthMatch) {
+            const dayNum = parseInt(dayMonthMatch[1], 10);
+            const mStr = dayMonthMatch[2].toLowerCase();
+            const yrNum = dayMonthMatch[3] ? parseInt(dayMonthMatch[3], 10) : tzParts.year;
+            if (mStr in monthNamesMap && dayNum >= 1 && dayNum <= 31) {
+              resolvedDateStr = this.formatDateParts(yrNum, monthNamesMap[mStr], dayNum);
+            }
+          }
+
+          // Pattern B: "sep 19", "september 19th", "september 19 2026"
+          if (!resolvedDateStr) {
+            const monthDayMatch = normalizedExpr.match(/\b([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?\b/i);
+            if (monthDayMatch) {
+              const mStr = monthDayMatch[1].toLowerCase();
+              const dayNum = parseInt(monthDayMatch[2], 10);
+              const yrNum = monthDayMatch[3] ? parseInt(monthDayMatch[3], 10) : tzParts.year;
+              if (mStr in monthNamesMap && dayNum >= 1 && dayNum <= 31) {
+                resolvedDateStr = this.formatDateParts(yrNum, monthNamesMap[mStr], dayNum);
+              }
+            }
+          }
+
+          // Pattern C: "19/09", "19-09", "19/09/2026", "19-09-2026"
+          if (!resolvedDateStr) {
+            const slashMatch = normalizedExpr.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{4}))?\b/);
+            if (slashMatch) {
+              const dayNum = parseInt(slashMatch[1], 10);
+              const monthNum = parseInt(slashMatch[2], 10) - 1;
+              const yrNum = slashMatch[3] ? parseInt(slashMatch[3], 10) : tzParts.year;
+              if (monthNum >= 0 && monthNum <= 11 && dayNum >= 1 && dayNum <= 31) {
+                resolvedDateStr = this.formatDateParts(yrNum, monthNum, dayNum);
+              }
+            }
+          }
+
+          // Pattern D: Standalone day of current month e.g. "20", "20th", "on 20"
+          if (!resolvedDateStr) {
+            const dayOnlyMatch = normalizedExpr.match(/^(\d{1,2})(?:st|nd|rd|th)?$/i);
+            if (dayOnlyMatch) {
+              const dayNum = parseInt(dayOnlyMatch[1], 10);
+              if (dayNum >= 1 && dayNum <= 31) {
+                resolvedDateStr = this.formatDateParts(tzParts.year, tzParts.month, dayNum);
+              }
+            }
+          }
         }
       }
     }

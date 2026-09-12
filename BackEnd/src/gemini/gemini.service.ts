@@ -138,12 +138,38 @@ export class GeminiService {
 
   private cleanJsonResponse(rawText: string): string {
     let cleaned = rawText.trim();
-    if (cleaned.startsWith('```json')) {
-      cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
-    } else if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```\s*/i, '').replace(/\s*```$/i, '');
+    const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (jsonBlockMatch) {
+      cleaned = jsonBlockMatch[1].trim();
+    } else {
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.substring(firstBrace, lastBrace + 1).trim();
+      }
     }
-    return cleaned.trim();
+    return cleaned;
+  }
+
+  /**
+   * Helper to extract explicit date expressions from prompt text
+   */
+  private extractDateFromPromptText(text: string): string | null {
+    const lower = text.toLowerCase();
+    if (lower.includes('tomorrow')) return 'tomorrow';
+    if (lower.includes('tonight')) return 'tonight';
+    if (lower.includes('this weekend') || lower.includes('weekend')) return 'this weekend';
+
+    const relativeMatch = text.match(/\b(?:after|in)\s+(\d{1,2})\s+days?\b|\b(\d{1,2})\s+days?\s+(?:later|from now|after)\b/i);
+    if (relativeMatch) {
+      return relativeMatch[0].trim();
+    }
+
+    const dateMatch = text.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{4})?|\d{4}-\d{2}-\d{2})\b/i);
+    if (dateMatch) {
+      return dateMatch[0].trim();
+    }
+    return null;
   }
 
   /**
@@ -153,51 +179,61 @@ export class GeminiService {
     const text = promptText.trim();
     const lower = text.toLowerCase();
 
-    // 1. Extract location
+    // 1. Extract date first so date tokens are not confused with location
+    const rawDate = this.extractDateFromPromptText(text) || 'today';
+    const resolvedTemp = this.dateResolverService.resolveTemporal({ date: rawDate });
+    const date = resolvedTemp.date || rawDate;
+
+    // Strip out extracted date expression, standalone numbers, years, and prepositions for location parsing
+    let cleanTextForLoc = text;
+    if (rawDate !== 'today') {
+      cleanTextForLoc = cleanTextForLoc.replace(new RegExp(rawDate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '');
+    }
+    cleanTextForLoc = cleanTextForLoc
+      .replace(/\b(on|on the|during|for|in|at)\b/gi, ' ')
+      .replace(/\b\d{4}\b/g, '')
+      .replace(/\b\d{1,2}[\/\-]\d{1,2}\b/g, '')
+      .replace(/\b\d{1,2}(?:st|nd|rd|th)?\b/gi, '')
+      .trim();
+
+    // 2. Extract location dynamically
     let location: string | null = null;
     let country: string | null = null;
 
-    const indianCities = [
-      'ahmedabad',
-      'mumbai',
-      'delhi',
-      'surat',
-      'rajkot',
-      'bengaluru',
-      'bangalore',
-      'chennai',
-      'kolkata',
-      'hyderabad',
-      'pune',
-    ];
-    for (const city of indianCities) {
-      if (lower.includes(city)) {
-        location = city.charAt(0).toUpperCase() + city.slice(1);
-        country = 'IN';
-        break;
-      }
+    // Check prepositions first: e.g. "in brisbane", "at jamnagar", "for tokyo"
+    const prepMatch = cleanTextForLoc.match(/\b(?:in|at|for|near|around)\s+([A-Za-z\s]+?)(?:\s+(?:tomorrow|today|tonight|next|this|weather|rain|temp|temperature)|[?!.]|$)/i);
+    if (prepMatch && prepMatch[1].trim().length > 1) {
+      location = prepMatch[1].trim();
     }
 
     if (!location) {
-      const otherCities = ['london', 'paris', 'new york', 'tokyo', 'sydney'];
-      for (const city of otherCities) {
-        if (lower.includes(city)) {
-          location = city.charAt(0).toUpperCase() + city.slice(1);
-          break;
-        }
+      const stopwords = new Set([
+        'weather', 'rain', 'temperature', 'temp', 'forecast', 'today', 'tomorrow', 'tonight',
+        'morning', 'afternoon', 'evening', 'night', 'this', 'weekend', 'in', 'at', 'for', 'near',
+        'is', 'it', 'will', 'there', 'be', 'suitability', 'suitable', 'cricket', 'match', 'varsad',
+        'aavse', 'kale', 'su', 'che', 'kavo', 'kedi', 'ma', 'per', 'how', 'what', 'when', 'where',
+        'the', 'a', 'an', 'should', 'i', 'you', 'can', 'give', 'show', 'tell', 'me', 'about',
+        'with', 'of', 'and', 'or', 'to', 'please', 'now', 'current', 'humidity', 'wind', 'speed',
+        'clouds', 'cloud', 'sky', 'sun', 'sunny', 'hot', 'cold', 'warm', 'climate', 'city', 'on',
+        'after', 'days', 'day', 'later',
+      ]);
+
+      const cleanedWords = cleanTextForLoc
+        .replace(/[^\w\s]/g, '')
+        .split(/\s+/)
+        .filter((w) => w.length > 1 && !stopwords.has(w.toLowerCase()));
+
+      if (cleanedWords.length > 0) {
+        location = cleanedWords.join(' ');
       }
     }
 
-    if (!location) {
-      const match = text.match(/\b(?:in|at|for)\s+([A-Z][a-z]+)\b/);
-      if (match) location = match[1];
+    if (location) {
+      location = location
+        .split(' ')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
     }
-
-    // 2. Extract date
-    let date = 'today';
-    if (lower.includes('tomorrow')) date = 'tomorrow';
-    else if (lower.includes('tonight')) date = 'tonight';
-    else if (lower.includes('this weekend')) date = 'this weekend';
 
     // 3. Extract time period
     let timePeriod: 'morning' | 'afternoon' | 'evening' | 'night' | null = null;
@@ -230,7 +266,7 @@ export class GeminiService {
     return {
       location,
       country,
-      intent: lower.includes('tomorrow') || lower.includes('forecast') ? 'forecast' : 'current',
+      intent: date !== 'today' || lower.includes('forecast') ? 'forecast' : 'current',
       date,
       time_period: timePeriod,
       activity,
@@ -239,8 +275,8 @@ export class GeminiService {
   }
 
   /**
-   * Section 8, 9, 10: Gemini Weather Intent Extraction
-   * Extracts structured weather intent JSON matching WeatherGPT schema without generating answer.
+   * Gemini Weather Intent Extraction
+   * Uses Gemini AI Model directly to break down the prompt parameters into structured JSON.
    */
   async extractWeatherIntent(promptText: string): Promise<WeatherIntentSchema> {
     this.getAIClient(); // Ensures ServiceUnavailableException is thrown if GEMINI_API_KEY is missing
@@ -257,21 +293,29 @@ export class GeminiService {
     }
 
     const systemInstruction = `You are the WeatherGPT intent extraction engine.
-Your job is to understand a user's natural-language weather question and extract the structured information required to retrieve weather data.
-Do NOT answer the user's question.
+Your job is to break down the user's natural-language weather prompt directly using AI entity extraction into JSON.
+Do NOT answer the question.
 
 Extract:
-- location (city/place name or null if not mentioned)
-- country (ISO 2-letter country code or country name if mentioned, else null)
+- location (city or place name extracted from prompt, or null)
+- country (ISO 2-letter country code if mentioned or inferable, else null)
 - intent ("current" | "forecast" | "alerts")
-- date (natural expression e.g. "today", "tomorrow", "this weekend", "next Monday", or null)
+- date (natural expression e.g. "today", "tomorrow", "after 4 days", "in 3 days", "this weekend", "20 sep", "20 september", "19/09", or null)
+- dateOffset (number of days relative to today if prompt specifies a relative offset e.g. 4 for "after 4 days", else null)
 - time_period ("morning" | "afternoon" | "evening" | "night" | null)
 - activity (e.g. "amusement park", "cricket match", "biking", "running", or null if no specific activity)
 - requested_data (array of relevant parameters: "temperature", "feels_like", "humidity", "rain", "precipitation_probability", "wind_speed", "wind_direction", "pressure", "visibility", "weather_condition", "sunrise", "sunset", "uv_index")
 
-Do NOT invent a location. Return valid JSON only.`;
+Return valid JSON only.`;
 
-    const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-latest'];
+    const candidateModels = [
+      'gemma-4-26b-a4b-it',
+      'gemma-4-31b-it',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-flash-latest',
+      'gemini-pro-latest',
+    ];
 
     for (const modelName of candidateModels) {
       try {
@@ -295,35 +339,37 @@ Do NOT invent a location. Return valid JSON only.`;
         const cleaned = this.cleanJsonResponse(rawResponse);
         const parsed = JSON.parse(cleaned);
 
-        const locStr = typeof parsed.location === 'string' ? parsed.location.trim() : null;
-        let countryStr = typeof parsed.country === 'string' ? parsed.country.trim() : null;
+        const location = typeof parsed.location === 'string' ? parsed.location.trim() : null;
+        const country = typeof parsed.country === 'string' ? parsed.country.trim() : null;
 
-        if (locStr && !countryStr) {
-          const indianCities = [
-            'ahmedabad',
-            'mumbai',
-            'delhi',
-            'surat',
-            'rajkot',
-            'bengaluru',
-            'bangalore',
-            'chennai',
-            'kolkata',
-            'hyderabad',
-            'pune',
-          ];
-          if (indianCities.includes(locStr.toLowerCase())) {
-            countryStr = 'IN';
+        let rawDateStr = typeof parsed.date === 'string' && parsed.date.trim() ? parsed.date.trim() : null;
+        if (typeof parsed.dateOffset === 'number' && !isNaN(parsed.dateOffset)) {
+          rawDateStr = `after ${parsed.dateOffset} days`;
+        }
+        if (!rawDateStr || rawDateStr === 'today') {
+          const promptDate = this.extractDateFromPromptText(promptText);
+          if (promptDate) {
+            rawDateStr = promptDate;
           }
         }
+        if (!rawDateStr) {
+          rawDateStr = 'today';
+        }
+
+        const resolvedTemp = this.dateResolverService.resolveTemporal({ date: rawDateStr });
+        const date = resolvedTemp.date || rawDateStr;
+
+        const intent = ['current', 'forecast', 'alerts'].includes(parsed.intent)
+          ? parsed.intent
+          : (date !== 'today' ? 'forecast' : 'current');
+
+        this.logger.log(`Gemini API Model [${modelName}] successfully extracted intent: ${JSON.stringify({ ...parsed, date })}`);
 
         return {
-          location: locStr,
-          country: countryStr,
-          intent: ['current', 'forecast', 'alerts'].includes(parsed.intent)
-            ? parsed.intent
-            : 'forecast',
-          date: typeof parsed.date === 'string' ? parsed.date.trim() : 'today',
+          location,
+          country,
+          intent,
+          date,
           time_period: ['morning', 'afternoon', 'evening', 'night'].includes(parsed.time_period)
             ? parsed.time_period
             : null,
@@ -361,6 +407,7 @@ Do NOT invent a location. Return valid JSON only.`;
     );
 
     return {
+      
       location: extractedIntent.location,
       date: extractedIntent.date || null,
       resolvedDate: resolvedTemporal.date,
@@ -435,7 +482,13 @@ Actual OpenWeather Facts:
 
 Generate a practical recommendation now.`;
 
-    const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-latest'];
+    const candidateModels = [
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-flash-latest',
+      'gemini-2.5-flash',
+      'gemini-pro-latest',
+    ];
     let lastError: any = null;
     let emptyResponseReturned = false;
 
