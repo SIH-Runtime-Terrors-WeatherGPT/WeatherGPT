@@ -1,7 +1,0 @@
-OpenWeatherAPI- "1604448be91ca899e8fd9cc9d2170211"
-GoogleAIStudio- "AQ.Ab8RN6IqXXN-9ftk1FfLsjViNUN-Cik_3sqlE0tbW8YgRb3tUQ"
-RedisAPI- "Sl62oueqzhxwnmxfhmclxr05cc854onhjye3ztm7iurx5qok89"
-JWTSecretKey- "<GXALT)b!z1xgGm66K^]_QY82/<BnP*%6{j2|a9_Ebi"
-mongourl- "mongodb+srv://runtimeterrorsteam_db_user:<db_password>@cluster0.kjgqypr.mongodb.net/?appName=Cluster0"
-redis url- "redis-cli -u redis://default:Tw48YVK8OHMpb4iJskiaZ0ZiymcWqk1h@touchable-superpure-offer-66323.db.redis.io:10818"
-ollama api- "445ce01f6ba64e088f8499d493d0bdb3.PiLJ4MAaorlLuGSSgdfrTcTS"
