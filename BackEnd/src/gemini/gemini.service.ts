@@ -152,6 +152,37 @@ export class GeminiService {
   }
 
   /**
+   * Cleans extracted location string to guarantee activities, prepositions, dates, and noise words are stripped.
+   */
+  private cleanLocationString(rawLoc: string): string | null {
+    if (!rawLoc || typeof rawLoc !== 'string') return null;
+
+    let loc = rawLoc.trim();
+
+    // Strip date expressions e.g. "23 sept", "19 sep", "tomorrow", "today", "on 23 sept"
+    loc = loc
+      .replace(/\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?|september|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/gi, ' ')
+      .replace(/\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b/gi, ' ')
+      .replace(/\b(today|tomorrow|tonight|weekend|days|day|later|next|this)\b/gi, ' ')
+      .replace(/\b\d{1,2}(?:st|nd|rd|th)?\b/gi, ' ')
+      .replace(/\b\d{4}\b/g, ' ');
+
+    // Strip conversational text and activity words
+    loc = loc
+      .replace(/\b(how|about|a|an|the|trip|to|amusement|park|cricket|match|picnic|tour|visit|flight|travel|weather|forecast|temp|temperature|rain|on|on the|during|for|in|at)\b/gi, ' ')
+      .replace(/[^\w\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!loc) return null;
+
+    return loc
+      .split(' ')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  /**
    * Helper to extract explicit date expressions from prompt text
    */
   private extractDateFromPromptText(text: string): string | null {
@@ -165,7 +196,7 @@ export class GeminiService {
       return relativeMatch[0].trim();
     }
 
-    const dateMatch = text.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{4})?|\d{4}-\d{2}-\d{2})\b/i);
+    const dateMatch = text.match(/\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?|september|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?|september|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{4})?|\d{4}-\d{2}-\d{2})\b/i);
     if (dateMatch) {
       return dateMatch[0].trim();
     }
@@ -215,7 +246,7 @@ export class GeminiService {
         'the', 'a', 'an', 'should', 'i', 'you', 'can', 'give', 'show', 'tell', 'me', 'about',
         'with', 'of', 'and', 'or', 'to', 'please', 'now', 'current', 'humidity', 'wind', 'speed',
         'clouds', 'cloud', 'sky', 'sun', 'sunny', 'hot', 'cold', 'warm', 'climate', 'city', 'on',
-        'after', 'days', 'day', 'later',
+        'after', 'days', 'day', 'later', 'trip', 'amusement', 'park',
       ]);
 
       const cleanedWords = cleanTextForLoc
@@ -229,10 +260,7 @@ export class GeminiService {
     }
 
     if (location) {
-      location = location
-        .split(' ')
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-        .join(' ');
+      location = this.cleanLocationString(location);
     }
 
     // 3. Extract time period
@@ -296,11 +324,16 @@ export class GeminiService {
 Your job is to break down the user's natural-language weather prompt directly using AI entity extraction into JSON.
 Do NOT answer the question.
 
+STRICT LOCATION RULE:
+- location: Extract ONLY the city, town, village, or neighborhood name (e.g. "Wakad", "Jamnagar", "London", "Surat").
+  NEVER include activities (e.g. "trip to", "amusement park", "cricket match"), dates (e.g. "23 sept", "tomorrow"), prepositions ("in", "on", "at"), or conversational text in the location field.
+  Example: For "how about a trip to amusement park in wakad on 23 sept", location MUST be "Wakad" ONLY, activity MUST be "amusement park", date MUST be "23 sept".
+
 Extract:
-- location (city or place name extracted from prompt, or null)
+- location (city or neighborhood name ONLY, or null)
 - country (ISO 2-letter country code if mentioned or inferable, else null)
 - intent ("current" | "forecast" | "alerts")
-- date (natural expression e.g. "today", "tomorrow", "after 4 days", "in 3 days", "this weekend", "20 sep", "20 september", "19/09", or null)
+- date (natural expression e.g. "today", "tomorrow", "after 4 days", "in 3 days", "this weekend", "20 sep", "23 sept", "19/09", or null)
 - dateOffset (number of days relative to today if prompt specifies a relative offset e.g. 4 for "after 4 days", else null)
 - time_period ("morning" | "afternoon" | "evening" | "night" | null)
 - activity (e.g. "amusement park", "cricket match", "biking", "running", or null if no specific activity)
@@ -339,7 +372,8 @@ Return valid JSON only.`;
         const cleaned = this.cleanJsonResponse(rawResponse);
         const parsed = JSON.parse(cleaned);
 
-        const location = typeof parsed.location === 'string' ? parsed.location.trim() : null;
+        const rawLoc = typeof parsed.location === 'string' ? parsed.location.trim() : null;
+        const location = rawLoc ? this.cleanLocationString(rawLoc) : null;
         const country = typeof parsed.country === 'string' ? parsed.country.trim() : null;
 
         let rawDateStr = typeof parsed.date === 'string' && parsed.date.trim() ? parsed.date.trim() : null;
@@ -363,7 +397,7 @@ Return valid JSON only.`;
           ? parsed.intent
           : (date !== 'today' ? 'forecast' : 'current');
 
-        this.logger.log(`Gemini API Model [${modelName}] successfully extracted intent: ${JSON.stringify({ ...parsed, date })}`);
+        this.logger.log(`Gemini API Model [${modelName}] successfully extracted intent: ${JSON.stringify({ ...parsed, location, date })}`);
 
         return {
           location,
