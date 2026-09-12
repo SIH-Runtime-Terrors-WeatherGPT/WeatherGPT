@@ -1,1 +1,2 @@
 OpenWeatherAPI- 1604448be91ca899e8fd9cc9d2170211
+GoogleAIStudio- AQ.Ab8RN6IqXXN-9ftk1FfLsjViNUN-Cik_3sqlE0tbW8YgRb3tUQ
