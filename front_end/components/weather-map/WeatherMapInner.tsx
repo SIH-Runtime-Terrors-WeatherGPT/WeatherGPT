@@ -1,0 +1,260 @@
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { MapLayerType, WeatherLegend } from './WeatherLegend';
+import { WeatherLayerControl } from './WeatherLayerControl';
+import { Search, Navigation, Layers } from 'lucide-react';
+
+// Fix default Leaflet icon paths in React / Next.js
+const defaultIcon = L.icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+L.Marker.prototype.options.icon = defaultIcon;
+
+// OpenWeather tile layer code mapping
+const OPENWEATHER_LAYER_MAP: Record<MapLayerType, string> = {
+  rain: 'precipitation_new',
+  temperature: 'temp_new',
+  wind: 'wind_new',
+  clouds: 'clouds_new',
+  pressure: 'pressure_new',
+};
+
+const OPENWEATHER_API_KEY =
+  process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || 'b1b15e88fa797225412429c1c50c122a';
+
+export interface LocationMarkerData {
+  lat: number;
+  lon: number;
+  name: string;
+  country?: string;
+  temp?: number;
+  condition?: string;
+  humidity?: number;
+  windSpeed?: number;
+}
+
+interface WeatherMapInnerProps {
+  center?: [number, number];
+  zoom?: number;
+  activeLayer?: MapLayerType;
+  selectedMarker?: LocationMarkerData | null;
+  onMarkerSelect?: (marker: LocationMarkerData) => void;
+}
+
+/** Helper component to fly/pan map when center prop changes */
+function MapCenterController({ center, zoom }: { center: [number, number]; zoom: number }) {
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo(center, zoom, { duration: 1.5 });
+  }, [center, zoom, map]);
+  return null;
+}
+
+export default function WeatherMapInner({
+  center = [23.0225, 72.5714], // Default Ahmedabad
+  zoom = 6,
+  activeLayer: externalActiveLayer = 'rain',
+  selectedMarker = null,
+  onMarkerSelect,
+}: WeatherMapInnerProps) {
+  const [activeLayer, setActiveLayer] = useState<MapLayerType>(externalActiveLayer);
+  const [mapCenter, setMapCenter] = useState<[number, number]>(center);
+  const [mapZoom, setMapZoom] = useState<number>(zoom);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [marker, setMarker] = useState<LocationMarkerData | null>(selectedMarker);
+
+  useEffect(() => {
+    setActiveLayer(externalActiveLayer);
+  }, [externalActiveLayer]);
+
+  useEffect(() => {
+    if (center) {
+      setMapCenter(center);
+    }
+  }, [center]);
+
+  useEffect(() => {
+    if (selectedMarker) {
+      setMarker(selectedMarker);
+      setMapCenter([selectedMarker.lat, selectedMarker.lon]);
+    }
+  }, [selectedMarker]);
+
+  // Handle city search directly on the map
+  const handleSearchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    setSearching(true);
+    try {
+      const res = await fetch(
+        `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(
+          searchQuery.trim(),
+        )}&limit=1&appid=${OPENWEATHER_API_KEY}`,
+      );
+      const data = await res.json();
+
+      if (Array.isArray(data) && data.length > 0) {
+        const found = data[0];
+        const newMarker: LocationMarkerData = {
+          lat: found.lat,
+          lon: found.lon,
+          name: found.name,
+          country: found.country,
+        };
+        setMarker(newMarker);
+        setMapCenter([found.lat, found.lon]);
+        setMapZoom(10);
+        if (onMarkerSelect) onMarkerSelect(newMarker);
+      }
+    } catch {
+      // Fallback geocode using OpenStreetMap Nominatim
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+            searchQuery.trim(),
+          )}`,
+        );
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const found = data[0];
+          const lat = parseFloat(found.lat);
+          const lon = parseFloat(found.lon);
+          const newMarker: LocationMarkerData = {
+            lat,
+            lon,
+            name: found.display_name.split(',')[0],
+          };
+          setMarker(newMarker);
+          setMapCenter([lat, lon]);
+          setMapZoom(10);
+          if (onMarkerSelect) onMarkerSelect(newMarker);
+        }
+      } catch (err) {
+        console.error('Map search failed', err);
+      }
+    } finally {
+      setSearching(false);
+      setSearchQuery('');
+    }
+  };
+
+  // Browser Geolocation center
+  const handleCurrentLocation = () => {
+    if (typeof window !== 'undefined' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          const userMarker: LocationMarkerData = {
+            lat,
+            lon,
+            name: 'Your Location',
+          };
+          setMarker(userMarker);
+          setMapCenter([lat, lon]);
+          setMapZoom(11);
+        },
+        (err) => console.warn('Geolocation denied or error', err),
+      );
+    }
+  };
+
+  const currentTileLayerCode = OPENWEATHER_LAYER_MAP[activeLayer];
+  const tileUrl = `https://tile.openweathermap.org/map/${currentTileLayerCode}/{z}/{x}/{y}.png?appid=${OPENWEATHER_API_KEY}`;
+
+  return (
+    <div className="relative w-full h-full min-h-[450px] rounded-3xl overflow-hidden shadow-2xl border border-white/10 bg-slate-950">
+      
+      {/* Floating Top Search & Location Control */}
+      <div className="absolute top-4 left-4 z-[1000] flex items-center gap-2 pointer-events-auto">
+        <form onSubmit={handleSearchSubmit} className="relative flex items-center">
+          <input
+            type="text"
+            placeholder="Search map location..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-4 py-2 text-xs rounded-2xl bg-slate-950/85 backdrop-blur-md border border-white/15 text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-400 w-48 sm:w-64 shadow-xl transition-all"
+          />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+        </form>
+
+        <button
+          onClick={handleCurrentLocation}
+          title="Locate Me"
+          className="p-2.5 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-white/15 text-cyan-400 hover:text-cyan-300 hover:bg-white/10 shadow-xl transition"
+        >
+          <Navigation className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Floating Layer Switcher Control */}
+      <WeatherLayerControl activeLayer={activeLayer} onSelectLayer={setActiveLayer} />
+
+      {/* Floating Dynamic Legend */}
+      <WeatherLegend activeLayer={activeLayer} />
+
+      {/* Map Container */}
+      <MapContainer
+        center={mapCenter}
+        zoom={mapZoom}
+        scrollWheelZoom={true}
+        className="w-full h-full z-0"
+        style={{ height: '100%', width: '100%' }}
+      >
+        <MapCenterController center={mapCenter} zoom={mapZoom} />
+
+        {/* Base OpenStreetMap Tiles */}
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+
+        {/* OpenWeather Overlay Layer */}
+        <TileLayer
+          key={activeLayer}
+          url={tileUrl}
+          opacity={0.65}
+          attribution='&copy; <a href="https://openweathermap.org/">OpenWeather</a>'
+        />
+
+        {/* Interactive Location Marker */}
+        {marker && (
+          <Marker position={[marker.lat, marker.lon]}>
+            <Popup className="custom-weather-popup">
+              <div className="p-1 text-slate-900 font-sans">
+                <h4 className="font-bold text-sm text-slate-950">
+                  {marker.name} {marker.country ? `, ${marker.country}` : ''}
+                </h4>
+                {marker.temp !== undefined && (
+                  <p className="text-xs text-cyan-600 font-semibold mt-0.5">
+                    Temperature: {marker.temp}°C
+                  </p>
+                )}
+                {marker.condition && (
+                  <p className="text-[11px] text-slate-600 capitalize">
+                    Condition: {marker.condition}
+                  </p>
+                )}
+                {marker.humidity !== undefined && (
+                  <p className="text-[11px] text-slate-500">Humidity: {marker.humidity}%</p>
+                )}
+              </div>
+            </Popup>
+          </Marker>
+        )}
+      </MapContainer>
+    </div>
+  );
+}

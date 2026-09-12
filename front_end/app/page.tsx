@@ -9,7 +9,7 @@ export default function RootPage() {
   useEffect(() => {
     const token = localStorage.getItem('weathergpt_token');
     if (token) {
-      router.replace('/login'); // or your default dashboard page
+      router.replace('/dashboard');
     } else {
       router.replace('/login');
     }

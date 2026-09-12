@@ -1,0 +1,63 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User
+// ─────────────────────────────────────────────────────────────────────────────
+model User {
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  email         String         @unique
+  passwordHash  String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  chatHistories ChatHistory[]
+  conversations Conversation[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Conversation & Message
+// ─────────────────────────────────────────────────────────────────────────────
+model Conversation {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String    @db.ObjectId
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id              String       @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId  String       @db.ObjectId
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role            String // "user" | "assistant"
+  content         String
+  intent          Json?
+  weatherSnapshot Json?
+  createdAt       DateTime     @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ChatHistory (Legacy & Audit)
+// ─────────────────────────────────────────────────────────────────────────────
+model ChatHistory {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String   @db.ObjectId
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalMessage   String
+  structuredRequest Json
+  weatherSummary    Json
+  answer            String
+  createdAt         DateTime @default(now())
+}

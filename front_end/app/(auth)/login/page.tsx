@@ -18,22 +18,32 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    const endpoint = isLogin ? '/api/v1/auth/login' : '/api/v1/auth/register'; //[cite: 1]
-    const payload = isLogin ? { email, password } : { name, email, password }; //[cite: 1]
+    const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+    const payload = isLogin ? { email, password } : { name, email, password };
 
     try {
-      const res = await apiClient<{ user: any; token: string }>(endpoint, {
+      const res = await apiClient<{ accessToken?: string; token?: string; user: any }>(endpoint, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
 
-      localStorage.setItem('weathergpt_token', res.data.token);
-      router.push('/');
+      const token = res.data?.accessToken || res.data?.token;
+      if (token) {
+        localStorage.setItem('weathergpt_token', token);
+        router.push('/dashboard');
+      } else {
+        throw new Error('Invalid token response from server');
+      }
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleUseDemo = () => {
+    setEmail('demo@weathergpt.com');
+    setPassword('Password123!');
   };
 
   return (
@@ -45,8 +55,8 @@ export default function LoginPage() {
       {/* Glassmorphic Form Card */}
       <div className="w-full max-w-md p-8 rounded-2xl backdrop-blur-2xl bg-slate-900/60 border border-white/10 shadow-2xl z-10 transition-all">
         <div className="text-center mb-8">
-          <div className="inline-flex p-3 rounded-2xl bg-blue-500/10 border border-blue-400/20 mb-3 text-cyan-400">
-            ☁️
+          <div className="inline-flex w-14 h-14 rounded-2xl overflow-hidden border border-cyan-400/30 bg-slate-800/80 mb-3 shadow-lg shadow-cyan-500/10 p-1">
+            <img src="/weatherGPT.png" alt="WeatherGPT Logo" className="w-full h-full object-cover rounded-xl" />
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
             WeatherGPT
@@ -104,17 +114,25 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 mt-4 rounded-xl font-medium bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 transition shadow-lg shadow-cyan-500/20 disabled:opacity-50"
+            className="w-full py-3 mt-4 rounded-xl font-medium bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 transition shadow-lg shadow-cyan-500/20 disabled:opacity-50 text-sm font-semibold"
           >
             {loading ? 'Authenticating...' : isLogin ? 'Sign In' : 'Register'}
           </button>
         </form>
 
-        <div className="text-center mt-6">
+        <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-2 text-center">
+          <button
+            type="button"
+            onClick={handleUseDemo}
+            className="w-full py-2 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-semibold transition"
+          >
+            ✨ Auto-fill SIH Demo Credentials
+          </button>
+
           <button
             type="button"
             onClick={() => setIsLogin(!isLogin)}
-            className="text-xs text-slate-400 hover:text-cyan-400 transition"
+            className="text-xs text-slate-400 hover:text-cyan-400 transition mt-1"
           >
             {isLogin ? "Don't have an account? Sign Up" : 'Already have an account? Sign In'}
           </button>
