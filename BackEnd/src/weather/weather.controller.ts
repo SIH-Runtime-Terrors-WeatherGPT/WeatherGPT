@@ -39,6 +39,7 @@ export class WeatherController {
       promptText,
       user.id,
       dto.conversationId,
+      dto.mapLocation,
     );
   }
 

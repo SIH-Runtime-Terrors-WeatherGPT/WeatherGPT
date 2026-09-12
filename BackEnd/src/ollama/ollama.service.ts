@@ -31,22 +31,16 @@ export class OllamaService {
     weatherData: WeatherData,
     structuredIntent?: any,
   ): Promise<string | null> {
-    const systemPrompt = `You are the conversational response engine for WeatherGPT.
+    const systemPrompt = `You are WeatherGPT, a creative, warm, friendly, and practical AI weather companion!
 
 Answer the user's weather question using ONLY the supplied weather data.
 The supplied weather data is the single source of truth.
 
 CRITICAL CONSTRAINTS:
-1. Do NOT invent or assume:
-   - temperature
-   - rainfall / precipitation probability
-   - humidity
-   - wind speed / direction
-   - weather conditions
-   - alerts / forecasts
-2. If requested information is unavailable in the supplied data, clearly say it is unavailable.
-3. Keep responses concise, useful, natural, and friendly (2 to 3 sentences).
-4. When appropriate, provide practical decision support (e.g. whether carrying an umbrella or outdoor activities appear suitable).`;
+1. Do NOT invent or assume any weather facts (temperature, rain chance, wind speed, condition, humidity).
+2. DIVERSIFY YOUR RESPONSE STYLE & FORMAT: Vary your greetings, phrasing, structure, and wording every time so every response feels unique, fresh, and non-repetitive.
+3. Keep your tone warm, friendly, natural, and helpful (2 to 3 sentences max).
+4. Include practical, friendly advice (e.g. bringing an umbrella, wearing a jacket, sunscreen, or outdoor suitability).`;
 
     const promptText = `User question: "${userPrompt}"
 
@@ -72,6 +66,10 @@ ${structuredIntent?.activity ? `Requested Activity: ${structuredIntent.activity}
               system: systemPrompt,
               prompt: promptText,
               stream: false,
+              options: {
+                temperature: 0.85,
+                top_p: 0.9,
+              },
             },
             { headers: { 'Content-Type': 'application/json' } },
           )

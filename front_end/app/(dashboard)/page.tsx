@@ -117,6 +117,7 @@ export default function DashboardPage() {
             zoom={mapZoom}
             activeLayer={activeLayer}
             selectedMarker={marker}
+            onMarkerSelect={(newMarker) => setMarker(newMarker)}
           />
         </section>
 
@@ -125,7 +126,12 @@ export default function DashboardPage() {
           <ChatPanel
             messages={messages}
             sending={sending}
-            onSendMessage={sendMessage}
+            onSendMessage={(msg) =>
+              sendMessage(
+                msg,
+                marker ? { name: marker.name, lat: marker.lat, lon: marker.lon } : undefined,
+              )
+            }
           />
         </section>
 

@@ -45,11 +45,11 @@ async function testWeatherApi(prompt) {
 }
 
 async function runAllTests() {
-  await testWeatherApi("What is the weather in Ahmedabad right now?");
-  await testWeatherApi("Will it rain in Mumbai tomorrow?");
-  await testWeatherApi("Should I carry an umbrella in Ahmedabad tomorrow evening?");
-  await testWeatherApi("How hot will Delhi be tomorrow afternoon?");
-  await testWeatherApi("Will tomorrow's weather be suitable for a cricket match in Surat?");
+  await testWeatherApi("I wish to visit Sun Temple near Mehsana on 20th October, is it suitable?");
+  await testWeatherApi("Weather at Statue of Unity near Rajpipla");
+  await testWeatherApi("Will it rain in Ahmedabad tomorrow?");
+  await testWeatherApi("How is the weather in Springfield?");
+  await testWeatherApi("Suitability for cricket match in Surat tomorrow?");
 }
 
 runAllTests();

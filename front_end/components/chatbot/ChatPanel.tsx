@@ -46,7 +46,6 @@ export function ChatPanel({
   const samplePrompts = [
     '🌧️ Will it rain in Ahmedabad tomorrow?',
     '🌡️ How hot will Delhi be tomorrow afternoon?',
-    '🏏 Suitable for cricket in Surat tomorrow?',
     '🎡 Good weather for amusement park in London?',
   ];
 

@@ -19,9 +19,22 @@ async function bootstrap() {
     }
   }
 
-  // Enable CORS
+  // Enable CORS (support credentials with dynamic dev origins)
+  const allowedOrigins = [
+    frontendUrl,
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:3000',
+  ];
+
   app.enableCors({
-    origin: '*', // Allow development frontend requests
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });

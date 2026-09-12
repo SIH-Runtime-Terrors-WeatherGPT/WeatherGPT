@@ -183,6 +183,41 @@ export class DateResolverService {
   }
 
   /**
+   * Resolves a date range (e.g., "20 sep to 25 sep", "from 15th Oct to 20th Oct", "next 5 days")
+   */
+  resolveDateRange(
+    rawStart: string | null,
+    rawEnd: string | null,
+    referenceDate: Date = new Date(),
+  ): { startDate: string | null; endDate: string | null } {
+    let resolvedStart = rawStart ? this.resolveTemporal({ date: rawStart }, referenceDate).date : null;
+    let resolvedEnd = rawEnd ? this.resolveTemporal({ date: rawEnd }, referenceDate).date : null;
+
+    // Handle "20 to 25 sep" where start is "20" and end is "25 sep"
+    if (!resolvedStart && rawStart && resolvedEnd && /^\d{1,2}(?:st|nd|rd|th)?$/i.test(rawStart.trim())) {
+      const dayNum = parseInt(rawStart.trim(), 10);
+      const [endYr, endMo] = resolvedEnd.split('-').map((n) => parseInt(n, 10));
+      if (dayNum >= 1 && dayNum <= 31) {
+        resolvedStart = this.formatDateParts(endYr, endMo - 1, dayNum);
+      }
+    }
+
+    // Handle "20 sep to 25" where start is "20 sep" and end is "25"
+    if (resolvedStart && !resolvedEnd && rawEnd && /^\d{1,2}(?:st|nd|rd|th)?$/i.test(rawEnd.trim())) {
+      const dayNum = parseInt(rawEnd.trim(), 10);
+      const [startYr, startMo] = resolvedStart.split('-').map((n) => parseInt(n, 10));
+      if (dayNum >= 1 && dayNum <= 31) {
+        resolvedEnd = this.formatDateParts(startYr, startMo - 1, dayNum);
+      }
+    }
+
+    return {
+      startDate: resolvedStart,
+      endDate: resolvedEnd,
+    };
+  }
+
+  /**
    * Helper to extract date components adjusted for a given timezone.
    */
   private getTimezoneDateParts(

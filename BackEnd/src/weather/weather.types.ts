@@ -18,6 +18,10 @@ export interface WeatherData {
   windSpeed: number;
   /** Relative humidity 0–100 (%) */
   humidity: number;
+  /** Relative or exact date requested by user, e.g. "2026-09-20" */
+  requestedDate?: string;
+  /** True if requested date is beyond the OpenWeather 5-day forecast limit */
+  isForecastLimitReached?: boolean;
 }
 
 // ─── Raw OpenWeather shapes (internal use only) ───────────────────────────────

@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapLayerType, WeatherLegend } from './WeatherLegend';
 import { WeatherLayerControl } from './WeatherLayerControl';
-import { Search, Navigation, Layers } from 'lucide-react';
+import { Search, Navigation, Layers, X } from 'lucide-react';
 
 // Fix default Leaflet icon paths in React / Next.js
 const defaultIcon = L.icon({
@@ -60,6 +60,16 @@ function MapCenterController({ center, zoom }: { center: [number, number]; zoom:
   return null;
 }
 
+/** Helper component to capture map click events */
+function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lon: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
 export default function WeatherMapInner({
   center = [23.0225, 72.5714], // Default Ahmedabad
   zoom = 6,
@@ -90,6 +100,40 @@ export default function WeatherMapInner({
       setMapCenter([selectedMarker.lat, selectedMarker.lon]);
     }
   }, [selectedMarker]);
+
+  // Handle map click to place pointer and fetch weather summary
+  const handleMapClick = async (lat: number, lon: number) => {
+    try {
+      const res = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${OPENWEATHER_API_KEY}`,
+      );
+      const data = await res.json();
+
+      let locationName = data.name || `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
+      if (data.sys?.country && !locationName.includes(data.sys.country)) {
+        locationName = `${locationName}, ${data.sys.country}`;
+      }
+
+      const newMarker: LocationMarkerData = {
+        lat,
+        lon,
+        name: locationName,
+        country: data.sys?.country,
+        temp: data.main?.temp !== undefined ? Math.round(data.main.temp * 10) / 10 : undefined,
+        condition: data.weather?.[0]?.description,
+        humidity: data.main?.humidity,
+        windSpeed: data.wind?.speed ? Math.round(data.wind.speed * 10) / 10 : undefined,
+      };
+
+      setMarker(newMarker);
+      setMapCenter([lat, lon]);
+      if (onMarkerSelect) {
+        onMarkerSelect(newMarker);
+      }
+    } catch (err) {
+      console.error('Error fetching weather summary for map click', err);
+    }
+  };
 
   // Handle city search directly on the map
   const handleSearchSubmit = async (e: React.FormEvent) => {
@@ -157,14 +201,7 @@ export default function WeatherMapInner({
         (pos) => {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
-          const userMarker: LocationMarkerData = {
-            lat,
-            lon,
-            name: 'Your Location',
-          };
-          setMarker(userMarker);
-          setMapCenter([lat, lon]);
-          setMapZoom(11);
+          handleMapClick(lat, lon);
         },
         (err) => console.warn('Geolocation denied or error', err),
       );
@@ -210,10 +247,11 @@ export default function WeatherMapInner({
         center={mapCenter}
         zoom={mapZoom}
         scrollWheelZoom={true}
-        className="w-full h-full z-0"
+        className="w-full h-full z-0 cursor-pointer"
         style={{ height: '100%', width: '100%' }}
       >
         <MapCenterController center={mapCenter} zoom={mapZoom} />
+        <MapClickHandler onMapClick={handleMapClick} />
 
         {/* Base OpenStreetMap Tiles */}
         <TileLayer
@@ -229,27 +267,76 @@ export default function WeatherMapInner({
           attribution='&copy; <a href="https://openweathermap.org/">OpenWeather</a>'
         />
 
-        {/* Interactive Location Marker */}
+        {/* Interactive Location Marker & Weather Summary Popup */}
         {marker && (
-          <Marker position={[marker.lat, marker.lon]}>
-            <Popup className="custom-weather-popup">
-              <div className="p-1 text-slate-900 font-sans">
-                <h4 className="font-bold text-sm text-slate-950">
-                  {marker.name} {marker.country ? `, ${marker.country}` : ''}
-                </h4>
-                {marker.temp !== undefined && (
-                  <p className="text-xs text-cyan-600 font-semibold mt-0.5">
-                    Temperature: {marker.temp}°C
-                  </p>
-                )}
-                {marker.condition && (
-                  <p className="text-[11px] text-slate-600 capitalize">
-                    Condition: {marker.condition}
-                  </p>
-                )}
-                {marker.humidity !== undefined && (
-                  <p className="text-[11px] text-slate-500">Humidity: {marker.humidity}%</p>
-                )}
+          <Marker position={[marker.lat, marker.lon]} ref={(r) => r?.openPopup()}>
+            <Popup className="custom-weather-popup" autoPan={true} closeButton={false}>
+              <div
+                className="p-3 min-w-[190px] bg-slate-950 text-slate-100 rounded-2xl font-sans"
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2 gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                    <h4 className="font-bold text-xs text-cyan-300 truncate max-w-[120px]" title={marker.name}>
+                      {marker.name}
+                    </h4>
+                    {marker.country && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-slate-300 uppercase font-mono shrink-0">
+                        {marker.country}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setMarker(null);
+                    }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    className="text-slate-400 hover:text-white p-0.5 rounded-md hover:bg-white/10 transition-colors shrink-0 flex items-center justify-center cursor-pointer"
+                    title="Close popup"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 text-xs">
+                  {marker.temp !== undefined && (
+                    <div className="flex items-center justify-between text-slate-200">
+                      <span className="text-slate-400 text-[11px]">Temperature:</span>
+                      <span className="font-bold text-amber-400">{marker.temp}°C</span>
+                    </div>
+                  )}
+                  {marker.condition && (
+                    <div className="flex items-center justify-between text-slate-200">
+                      <span className="text-slate-400 text-[11px]">Condition:</span>
+                      <span className="capitalize text-emerald-300 font-medium text-[11px] truncate max-w-[100px]">
+                        {marker.condition}
+                      </span>
+                    </div>
+                  )}
+                  {marker.humidity !== undefined && (
+                    <div className="flex items-center justify-between text-slate-200">
+                      <span className="text-slate-400 text-[11px]">Humidity:</span>
+                      <span className="font-semibold text-cyan-400">{marker.humidity}%</span>
+                    </div>
+                  )}
+                  {marker.windSpeed !== undefined && (
+                    <div className="flex items-center justify-between text-slate-200">
+                      <span className="text-slate-400 text-[11px]">Wind Speed:</span>
+                      <span className="font-semibold text-slate-300">{marker.windSpeed} m/s</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </Popup>
           </Marker>

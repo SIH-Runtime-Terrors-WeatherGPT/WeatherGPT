@@ -34,13 +34,19 @@ export interface WeatherQueryResponse {
   conversationId?: string;
 }
 
+export interface MapLocationContext {
+  name?: string;
+  lat?: number;
+  lon?: number;
+}
+
 export function useChat() {
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
   const [latestQueryResult, setLatestQueryResult] = useState<WeatherQueryResponse | null>(null);
 
-  const sendMessage = async (userPrompt: string) => {
+  const sendMessage = async (userPrompt: string, mapLocation?: MapLocationContext) => {
     if (!userPrompt.trim()) return;
 
     const optimisticMsg: ChatMessage = {
@@ -54,7 +60,7 @@ export function useChat() {
     try {
       const res = await apiClient<WeatherQueryResponse>('/weather/chat', {
         method: 'POST',
-        body: JSON.stringify({ prompt: userPrompt, conversationId }),
+        body: JSON.stringify({ prompt: userPrompt, conversationId, mapLocation }),
       });
 
       const data = res.data;
@@ -81,11 +87,15 @@ export function useChat() {
 
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
+      let errorMessage = err?.message || 'Failed to get a response from WeatherGPT. Please verify your connection.';
+      if (errorMessage === 'Failed to fetch') {
+        errorMessage = 'Failed To fetch';
+      }
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: `⚠️ ${err?.message || 'Failed to get a response from WeatherGPT. Please verify your connection.'}`,
+          content: `⚠️ ${errorMessage}`,
           timestamp: new Date().toISOString(),
         },
       ]);

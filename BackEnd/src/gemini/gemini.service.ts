@@ -17,10 +17,15 @@ import { ExtractedNluQueryDto } from './dto/extracted-nlu-query.dto';
 import { DateResolverService } from '../common/services/date-resolver.service';
 
 export interface WeatherIntentSchema {
+  target_place?: string | null;
+  nearby_reference?: string | null;
   location: string | null;
   country?: string | null;
   intent: 'current' | 'forecast' | 'alerts';
   date?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  isDateRange?: boolean;
   time_period?: 'morning' | 'afternoon' | 'evening' | 'night' | null;
   requested_data: string[];
   activity?: string | null;
@@ -167,14 +172,20 @@ export class GeminiService {
       .replace(/\b\d{1,2}(?:st|nd|rd|th)?\b/gi, ' ')
       .replace(/\b\d{4}\b/g, ' ');
 
-    // Strip conversational text and activity words
+    // Strip conversational text, intentions, and activity noise words
     loc = loc
-      .replace(/\b(how|about|a|an|the|trip|to|amusement|park|cricket|match|picnic|tour|visit|flight|travel|weather|forecast|temp|temperature|rain|on|on the|during|for|in|at)\b/gi, ' ')
+      .replace(/\b(how|about|a|an|the|trip|to|amusement|park|cricket|match|picnic|tour|visit|flight|travel|weather|forecast|temp|temperature|rain|on|on the|during|for|in|at|wish|want|would|like|is|it|suitable|suitability|going|planning|plan|plans|give|show|tell|me|here|area|location|place|near|current|my)\b/gi, ' ')
       .replace(/[^\w\s]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
 
     if (!loc) return null;
+
+    const genericNoise = new Set([
+      'give', 'show', 'tell', 'me', 'us', 'here', 'this', 'area', 'location',
+      'place', 'near', 'current', 'my', 'the', 'weather', 'temp', 'temperature'
+    ]);
+    if (genericNoise.has(loc.toLowerCase())) return null;
 
     return loc
       .split(' ')
@@ -187,6 +198,7 @@ export class GeminiService {
    */
   private extractDateFromPromptText(text: string): string | null {
     const lower = text.toLowerCase();
+    if (lower.includes('day after tomorrow')) return 'day after tomorrow';
     if (lower.includes('tomorrow')) return 'tomorrow';
     if (lower.includes('tonight')) return 'tonight';
     if (lower.includes('this weekend') || lower.includes('weekend')) return 'this weekend';
@@ -204,19 +216,62 @@ export class GeminiService {
   }
 
   /**
+   * Helper to extract date ranges (e.g. "20 sep to 25 sep", "from 15th oct to 20th oct", "next 5 days")
+   */
+  private extractDateRangeFromPromptText(text: string): { startDate: string | null; endDate: string | null; isDateRange: boolean } {
+    const lower = text.toLowerCase().trim();
+
+    // Range Pattern 1: "from 20 sep to 25 sep", "20 to 25 sep", "between Oct 15 and Oct 20"
+    const rangeMatch = lower.match(/\b(?:from|between)?\s*(\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-z]+)?|\b(?:today|tomorrow))\s+(?:to|till|until|through|and|-)\s+(\d{1,2}(?:st|nd|rd|th)?(?:\s+[a-z]+)?|\b(?:tomorrow|sunday|monday|tuesday|wednesday|thursday|friday|saturday))\b/i);
+    if (rangeMatch) {
+      return {
+        startDate: rangeMatch[1].trim(),
+        endDate: rangeMatch[2].trim(),
+        isDateRange: true,
+      };
+    }
+
+    // Range Pattern 2: "next 5 days", "for 5 days"
+    const nextDaysMatch = lower.match(/\b(?:for\s+)?(?:the\s+)?next\s+(\d{1,2})\s+days?\b/i);
+    if (nextDaysMatch) {
+      const numDays = parseInt(nextDaysMatch[1], 10);
+      return {
+        startDate: 'today',
+        endDate: `after ${numDays} days`,
+        isDateRange: true,
+      };
+    }
+
+    return {
+      startDate: null,
+      endDate: null,
+      isDateRange: false,
+    };
+  }
+
+  /**
    * Fallback rule-based NLU intent extraction if Gemini API is unreachable or rate-limited.
    */
   private fallbackExtractWeatherIntent(promptText: string): WeatherIntentSchema {
     const text = promptText.trim();
     const lower = text.toLowerCase();
 
-    // 1. Extract date first so date tokens are not confused with location
-    const rawDate = this.extractDateFromPromptText(text) || 'today';
-    const resolvedTemp = this.dateResolverService.resolveTemporal({ date: rawDate });
-    const date = resolvedTemp.date || rawDate;
+    // 1. Extract date or date range first so date tokens are not confused with location
+    const dateRange = this.extractDateRangeFromPromptText(text);
+    const rawDate = this.extractDateFromPromptText(text) || dateRange.startDate || 'today';
 
-    // Strip out extracted date expression, standalone numbers, years, and prepositions for location parsing
-    let cleanTextForLoc = text;
+    const resolvedRange = this.dateResolverService.resolveDateRange(dateRange.startDate || rawDate, dateRange.endDate);
+    const startDate = resolvedRange.startDate || 'today';
+    const endDate = resolvedRange.endDate || null;
+    const isDateRange = dateRange.isDateRange || Boolean(endDate && endDate !== startDate);
+    const date = isDateRange && endDate ? `${startDate} to ${endDate}` : startDate;
+
+    // Clean conversational prefix & suffix noise
+    let cleanTextForLoc = text
+      .replace(/\b(i wish to visit|i want to visit|planning to visit|is it suitable|can i visit|good weather for|trip to|how is the weather in|weather in|weather at)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
     if (rawDate !== 'today') {
       cleanTextForLoc = cleanTextForLoc.replace(new RegExp(rawDate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '');
     }
@@ -227,17 +282,15 @@ export class GeminiService {
       .replace(/\b\d{1,2}(?:st|nd|rd|th)?\b/gi, '')
       .trim();
 
-    // 2. Extract location dynamically
-    let location: string | null = null;
-    let country: string | null = null;
+    // 2. Extract target_place & nearby_reference
+    let target_place: string | null = null;
+    let nearby_reference: string | null = null;
 
-    // Check prepositions first: e.g. "in brisbane", "at jamnagar", "for tokyo"
-    const prepMatch = cleanTextForLoc.match(/\b(?:in|at|for|near|around)\s+([A-Za-z\s]+?)(?:\s+(?:tomorrow|today|tonight|next|this|weather|rain|temp|temperature)|[?!.]|$)/i);
-    if (prepMatch && prepMatch[1].trim().length > 1) {
-      location = prepMatch[1].trim();
-    }
-
-    if (!location) {
+    const nearMatch = cleanTextForLoc.match(/(.+?)\s+\bnear\b\s+(.+)/i);
+    if (nearMatch) {
+      target_place = this.cleanLocationString(nearMatch[1]);
+      nearby_reference = this.cleanLocationString(nearMatch[2]);
+    } else {
       const stopwords = new Set([
         'weather', 'rain', 'temperature', 'temp', 'forecast', 'today', 'tomorrow', 'tonight',
         'morning', 'afternoon', 'evening', 'night', 'this', 'weekend', 'in', 'at', 'for', 'near',
@@ -245,8 +298,8 @@ export class GeminiService {
         'aavse', 'kale', 'su', 'che', 'kavo', 'kedi', 'ma', 'per', 'how', 'what', 'when', 'where',
         'the', 'a', 'an', 'should', 'i', 'you', 'can', 'give', 'show', 'tell', 'me', 'about',
         'with', 'of', 'and', 'or', 'to', 'please', 'now', 'current', 'humidity', 'wind', 'speed',
-        'clouds', 'cloud', 'sky', 'sun', 'sunny', 'hot', 'cold', 'warm', 'climate', 'city', 'on',
-        'after', 'days', 'day', 'later', 'trip', 'amusement', 'park',
+        'clouds', 'cloud', 'sky', 'hot', 'cold', 'warm', 'climate', 'city', 'on',
+        'after', 'days', 'day', 'later', 'trip', 'amusement', 'park', 'wish', 'visit', 'want',
       ]);
 
       const cleanedWords = cleanTextForLoc
@@ -255,13 +308,11 @@ export class GeminiService {
         .filter((w) => w.length > 1 && !stopwords.has(w.toLowerCase()));
 
       if (cleanedWords.length > 0) {
-        location = cleanedWords.join(' ');
+        target_place = this.cleanLocationString(cleanedWords.join(' '));
       }
     }
 
-    if (location) {
-      location = this.cleanLocationString(location);
-    }
+    const combinedLoc = [target_place, nearby_reference].filter(Boolean).join(', ') || target_place;
 
     // 3. Extract time period
     let timePeriod: 'morning' | 'afternoon' | 'evening' | 'night' | null = null;
@@ -275,13 +326,14 @@ export class GeminiService {
     if (lower.includes('cricket')) activity = 'cricket match';
     else if (lower.includes('amusement park')) activity = 'amusement park';
     else if (lower.includes('umbrella')) activity = 'carrying umbrella';
+    else if (lower.includes('visit') || lower.includes('trip')) activity = 'sightseeing / visit';
 
     // 5. Requested data
     const requestedData: string[] = [];
     if (lower.includes('rain') || lower.includes('umbrella') || lower.includes('precipitation')) {
       requestedData.push('rain', 'precipitation_probability');
     }
-    if (lower.includes('hot') || lower.includes('temp') || lower.includes('cold') || lower.includes('weather')) {
+    if (lower.includes('hot') || lower.includes('temp') || lower.includes('cold') || lower.includes('weather') || lower.includes('suitable')) {
       requestedData.push('temperature', 'weather_condition');
     }
     if (lower.includes('wind') || lower.includes('windy')) {
@@ -292,10 +344,14 @@ export class GeminiService {
     }
 
     return {
-      location,
-      country,
-      intent: date !== 'today' || lower.includes('forecast') ? 'forecast' : 'current',
+      target_place,
+      nearby_reference,
+      location: combinedLoc,
+      intent: isDateRange || date !== 'today' || lower.includes('forecast') ? 'forecast' : 'current',
       date,
+      startDate,
+      endDate,
+      isDateRange,
       time_period: timePeriod,
       activity,
       requested_data: Array.from(new Set(requestedData)),
@@ -320,34 +376,43 @@ export class GeminiService {
       };
     }
 
-    const systemInstruction = `You are the WeatherGPT intent extraction engine.
-Your job is to break down the user's natural-language weather prompt directly using AI entity extraction into JSON.
-Do NOT answer the question.
+    const systemInstruction = `You are the WeatherGPT natural language entity extraction engine.
+Your task is to break down ANY natural-language weather prompt into structured JSON parameters.
+Do NOT answer the user's question. ONLY extract the structured parameters.
 
-STRICT LOCATION RULE:
-- location: Extract ONLY the city, town, village, or neighborhood name (e.g. "Wakad", "Jamnagar", "London", "Surat").
-  NEVER include activities (e.g. "trip to", "amusement park", "cricket match"), dates (e.g. "23 sept", "tomorrow"), prepositions ("in", "on", "at"), or conversational text in the location field.
-  Example: For "how about a trip to amusement park in wakad on 23 sept", location MUST be "Wakad" ONLY, activity MUST be "amusement park", date MUST be "23 sept".
+ENTITY EXTRACTION INSTRUCTIONS:
+- target_place: Primary place, landmark, temple, monument, beach, park, stadium, neighborhood, or city name mentioned (e.g. "Sun Temple", "Taj Mahal", "Statue of Unity", "Wakad", "Jamnagar", "Mumbai"). Do NOT include prepositions ("in", "near", "at"), date words, or activity names.
+- nearby_reference: Nearby reference city, district, or region mentioned alongside the target place (e.g. for "Sun Temple near Mehsana", target_place is "Sun Temple" and nearby_reference is "Mehsana"; for "Wakad in Pune", target_place is "Wakad" and nearby_reference is "Pune"). Else null.
+- country: ISO 2-letter country code if mentioned or inferable (e.g. "IN", "US", "UK"), else null.
+- intent: "current" | "forecast" | "alerts"
+- date: Exact date or natural expression mentioned in prompt e.g. "today", "tomorrow", "day after tomorrow", "this weekend", "20th october", "20 sep", "23 sept", "19/09", "after 4 days", or null if not mentioned.
+- dateOffset: Integer number of days relative to today if explicitly stated (e.g. 1 for tomorrow, 2 for day after tomorrow, 4 for after 4 days), else null.
+- time_period: "morning" | "afternoon" | "evening" | "night" | null
+- activity: Specific activity, trip, or event mentioned (e.g. "sightseeing", "cricket match", "biking", "visit", "picnic", "carrying umbrella", "wedding"), else null.
+- requested_data: Array of relevant weather parameters requested: ["temperature", "rain", "precipitation_probability", "wind_speed", "weather_condition", "humidity"].
 
-Extract:
-- location (city or neighborhood name ONLY, or null)
-- country (ISO 2-letter country code if mentioned or inferable, else null)
-- intent ("current" | "forecast" | "alerts")
-- date (natural expression e.g. "today", "tomorrow", "after 4 days", "in 3 days", "this weekend", "20 sep", "23 sept", "19/09", or null)
-- dateOffset (number of days relative to today if prompt specifies a relative offset e.g. 4 for "after 4 days", else null)
-- time_period ("morning" | "afternoon" | "evening" | "night" | null)
-- activity (e.g. "amusement park", "cricket match", "biking", "running", or null if no specific activity)
-- requested_data (array of relevant parameters: "temperature", "feels_like", "humidity", "rain", "precipitation_probability", "wind_speed", "wind_direction", "pressure", "visibility", "weather_condition", "sunrise", "sunset", "uv_index")
-
-Return valid JSON only.`;
+Return valid JSON matching this schema:
+{
+  "target_place": "string or null",
+  "nearby_reference": "string or null",
+  "country": "string or null",
+  "intent": "current | forecast | alerts",
+  "date": "string or null",
+  "dateOffset": "number or null",
+  "time_period": "string or null",
+  "activity": "string or null",
+  "requested_data": ["string"]
+}`;
 
     const candidateModels = [
-      'gemma-4-26b-a4b-it',
-      'gemma-4-31b-it',
       'gemini-3.6-flash',
-      'gemini-3.5-flash',
-      'gemini-flash-latest',
-      'gemini-pro-latest',
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash-latest',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro-latest',
+      'gemini-1.5-pro',
+      'gemini-2.0-flash-exp',
     ];
 
     for (const modelName of candidateModels) {
@@ -372,8 +437,16 @@ Return valid JSON only.`;
         const cleaned = this.cleanJsonResponse(rawResponse);
         const parsed = JSON.parse(cleaned);
 
-        const rawLoc = typeof parsed.location === 'string' ? parsed.location.trim() : null;
-        const location = rawLoc ? this.cleanLocationString(rawLoc) : null;
+        const rawTarget = typeof parsed.target_place === 'string' && parsed.target_place.trim()
+          ? parsed.target_place.trim()
+          : (typeof parsed.location === 'string' && parsed.location.trim() ? parsed.location.trim() : null);
+        const target_place = rawTarget ? this.cleanLocationString(rawTarget) : null;
+
+        const rawRef = typeof parsed.nearby_reference === 'string' && parsed.nearby_reference.trim()
+          ? parsed.nearby_reference.trim()
+          : null;
+        const nearby_reference = rawRef ? this.cleanLocationString(rawRef) : null;
+
         const country = typeof parsed.country === 'string' ? parsed.country.trim() : null;
 
         let rawDateStr = typeof parsed.date === 'string' && parsed.date.trim() ? parsed.date.trim() : null;
@@ -390,20 +463,41 @@ Return valid JSON only.`;
           rawDateStr = 'today';
         }
 
-        const resolvedTemp = this.dateResolverService.resolveTemporal({ date: rawDateStr });
-        const date = resolvedTemp.date || rawDateStr;
+        const dateRange = this.extractDateRangeFromPromptText(promptText);
+        const rawStart = typeof parsed.startDate === 'string' && parsed.startDate.trim()
+          ? parsed.startDate.trim()
+          : (dateRange.startDate || rawDateStr);
+        const rawEnd = typeof parsed.endDate === 'string' && parsed.endDate.trim()
+          ? parsed.endDate.trim()
+          : dateRange.endDate;
+
+        const resolvedRange = this.dateResolverService.resolveDateRange(rawStart, rawEnd);
+        const startDate = resolvedRange.startDate || this.dateResolverService.resolveTemporal({ date: rawDateStr }).date || rawDateStr;
+        const endDate = resolvedRange.endDate || null;
+        const isDateRange = Boolean(parsed.isDateRange || dateRange.isDateRange || (endDate && endDate !== startDate));
+
+        const finalDateStr = isDateRange && endDate ? `${startDate} to ${endDate}` : startDate;
 
         const intent = ['current', 'forecast', 'alerts'].includes(parsed.intent)
           ? parsed.intent
-          : (date !== 'today' ? 'forecast' : 'current');
+          : (isDateRange || startDate !== 'today' ? 'forecast' : 'current');
 
-        this.logger.log(`Gemini API Model [${modelName}] successfully extracted intent: ${JSON.stringify({ ...parsed, location, date })}`);
+        const combinedLoc = [target_place, nearby_reference].filter(Boolean).join(', ') || target_place;
+
+        this.logger.log(
+          `Gemini API Model [${modelName}] extracted intent: target_place="${target_place}", nearby_ref="${nearby_reference}", date="${finalDateStr}" (isDateRange=${isDateRange})`,
+        );
 
         return {
-          location,
+          target_place,
+          nearby_reference,
+          location: combinedLoc,
           country,
           intent,
-          date,
+          date: finalDateStr,
+          startDate,
+          endDate,
+          isDateRange,
           time_period: ['morning', 'afternoon', 'evening', 'night'].includes(parsed.time_period)
             ? parsed.time_period
             : null,
@@ -485,15 +579,15 @@ Return valid JSON only.`;
       );
     }
 
-    const systemInstruction = `You are WeatherGPT, a practical weather recommendation assistant.
+    const systemInstruction = `You are WeatherGPT, a creative, warm, friendly, and practical AI weather assistant!
 Generate a concise, helpful recommendation for the user based STRICTLY on the actual weather facts provided by OpenWeather.
 
 CRITICAL CONSTRAINTS:
 1. Do NOT invent, assume, or modify any weather facts (temperature, rain chance, wind speed, condition, humidity).
-2. Base all weather statements ONLY on the provided OpenWeather facts. OpenWeather is the single source of weather truth.
-3. Explicitly address the user's requested activity (e.g. "${structuredRequest?.activity || 'general plans'}") and whether conditions are suitable.
-4. Keep the recommendation concise, natural, direct, and practical (2 to 3 sentences max).
-5. Suggest relevant clothing, gear, or precautions (e.g. light jacket, umbrella, sunscreen) appropriate for the given conditions.`;
+2. Base all weather statements ONLY on the provided OpenWeather facts.
+3. DIVERSIFY YOUR TEXT FORMAT AND STYLE EACH TIME: Vary your opening greeting, phrasing, sentence structure, and vocabulary on every single turn so no two responses share the same repetitive template!
+4. Keep the tone warm, conversational, friendly, and helpful (2 to 3 sentences max).
+5. Explicitly address the user's requested activity (e.g. "${structuredRequest?.activity || 'general plans'}") with practical advice (e.g. carrying an umbrella, light layers, sunscreen).`;
 
     const prompt = `User Question: "${originalQuestion}"
 
@@ -514,14 +608,17 @@ Actual OpenWeather Facts:
 - Wind Speed: ${weather.windSpeed} m/s
 - Humidity: ${weather.humidity}%
 
-Generate a practical recommendation now.`;
+Generate a unique, friendly, and practical response now.`;
 
     const candidateModels = [
       'gemini-3.6-flash',
-      'gemini-3.5-flash',
-      'gemini-flash-latest',
       'gemini-2.5-flash',
-      'gemini-pro-latest',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash-latest',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro-latest',
+      'gemini-1.5-pro',
+      'gemini-2.0-flash-exp',
     ];
     let lastError: any = null;
     let emptyResponseReturned = false;
@@ -532,7 +629,8 @@ Generate a practical recommendation now.`;
           const model = ai.getGenerativeModel({
             model: modelName,
             generationConfig: {
-              temperature: 0.3,
+              temperature: 0.85,
+              topP: 0.9,
             },
           });
 
@@ -560,15 +658,60 @@ Generate a practical recommendation now.`;
       );
     }
 
-    // Grounded fallback response strictly based on supplied OpenWeather facts
-    const rainMsg =
-      (weather.rainProbability ?? 0) >= 40
-        ? `There is a ${weather.rainProbability}% chance of precipitation in ${weather.location} for ${weather.date} (${weather.condition}). Carrying an umbrella is advisable.`
-        : `In ${weather.location} for ${weather.date}, expect ${weather.condition} with a temperature around ${weather.temperature}°C (High: ${weather.temperatureHigh}°C, Low: ${weather.temperatureLow}°C). Precipitation chance is ${weather.rainProbability}%.`;
+    // Varied, non-repetitive grounded fallback response strictly based on supplied OpenWeather facts
+    const rainProb = weather.rainProbability ?? 0;
+    const isRainy = rainProb >= 40;
 
-    const windMsg = weather.windSpeed ? ` Wind speed is expected around ${weather.windSpeed} m/s.` : '';
+    const greetings = isRainy
+      ? [
+          `🌧️ Rain alert for ${weather.location}!`,
+          `☔ Heading out in ${weather.location}? Expect some rain!`,
+          `🌧️ Keep your rain gear ready in ${weather.location}.`,
+          `🌦️ Showers are expected in ${weather.location} for ${weather.date}.`,
+        ]
+      : [
+          `☀️ Here's the latest forecast for ${weather.location}:`,
+          `🌤️ Weather look for ${weather.location} on ${weather.date}:`,
+          `🌡️ Current conditions in ${weather.location}:`,
+          `✨ Here's what to expect in ${weather.location}:`,
+        ];
 
-    return `${rainMsg}${windMsg}`;
+    const chosenGreeting = greetings[Math.floor(Math.random() * greetings.length)];
+
+    const rainPhrasings = isRainy
+      ? [
+          `There's a ${rainProb}% chance of precipitation with ${weather.condition}. Bringing an umbrella is highly recommended!`,
+          `Precipitation chance is around ${rainProb}% with ${weather.condition}. Grab a rain jacket or umbrella just in case.`,
+          `You'll likely see ${weather.condition} with a ${rainProb}% chance of rainfall. Plan outdoor activities carefully!`,
+        ]
+      : [
+          `Expect ${weather.condition} with temperatures near ${weather.temperature}°C (High: ${weather.temperatureHigh}°C, Low: ${weather.temperatureLow}°C) and a low rain chance of ${rainProb}%.`,
+          `Sky condition is ${weather.condition} at ${weather.temperature}°C (High ${weather.temperatureHigh}°C / Low ${weather.temperatureLow}°C). Rain probability stays low at ${rainProb}%.`,
+          `Conditions will be ${weather.condition}. Temperatures range between ${weather.temperatureLow}°C and ${weather.temperatureHigh}°C with an average around ${weather.temperature}°C.`,
+        ];
+
+    const chosenRainDetails = rainPhrasings[Math.floor(Math.random() * rainPhrasings.length)];
+
+    const windPhrasings = weather.windSpeed
+      ? [
+          ` Wind speed will average ${weather.windSpeed} m/s.`,
+          ` Winds are blowing at around ${weather.windSpeed} m/s.`,
+          ` Expect a breeze around ${weather.windSpeed} m/s.`,
+        ]
+      : [''];
+
+    const chosenWindDetails = windPhrasings[Math.floor(Math.random() * windPhrasings.length)];
+
+    const closings = [
+      ' Have a wonderful day!',
+      ' Stay safe and enjoy your day!',
+      ' Wishing you great weather ahead!',
+      ' Take care out there!',
+      ' Stay comfortable!',
+    ];
+    const chosenClosing = closings[Math.floor(Math.random() * closings.length)];
+
+    return `${chosenGreeting} ${chosenRainDetails}${chosenWindDetails}${chosenClosing}`;
   }
 
   async generateWeatherRecommendation(

@@ -6,6 +6,8 @@ import { ConversationsModule } from '../conversations/conversations.module';
 import { WeatherService } from './weather.service';
 import { WeatherController } from './weather.controller';
 
+import { LocationResolverService } from './services/location-resolver.service';
+
 @Module({
   imports: [
     HttpModule.register({
@@ -16,7 +18,7 @@ import { WeatherController } from './weather.controller';
     ConversationsModule,
   ],
   controllers: [WeatherController],
-  providers: [WeatherService],
-  exports: [WeatherService],
+  providers: [WeatherService, LocationResolverService],
+  exports: [WeatherService, LocationResolverService],
 })
 export class WeatherModule {}

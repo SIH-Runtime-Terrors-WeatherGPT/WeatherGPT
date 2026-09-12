@@ -5,3 +5,27 @@
     @apply backdrop-blur-xl bg-slate-900/60 border border-white/10 shadow-2xl;
   }
 }
+
+/* Override default Leaflet white popup background, tip, and borders */
+.custom-weather-popup .leaflet-popup-content-wrapper {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  outline: none !important;
+  padding: 0 !important;
+}
+
+.custom-weather-popup .leaflet-popup-content {
+  margin: 0 !important;
+}
+
+.custom-weather-popup .leaflet-popup-tip {
+  background: #020617 !important; /* matches bg-slate-950 */
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.custom-weather-popup .leaflet-popup-close-button {
+  display: none !important;
+}
