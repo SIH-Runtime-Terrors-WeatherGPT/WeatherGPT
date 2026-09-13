@@ -77,9 +77,9 @@ export default function LoginPage() {
           <div className="inline-flex w-14 h-14 overflow-hidden">
             <img src="/logo.png" alt="Logo" className="w-full h-full " />
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
-            WeatherGPT
-          </h1>
+          <div className="relative w-60 h-15 ms-18">
+            <img src="/weatherGPT.png" alt="WeatherGPT Logo" className="w-full h-full" />
+          </div>
           <p className="text-sm text-slate-400">
             {isLogin ? 'Access your AI-powered meteorological hub' : 'Create an account for hyper-local climate intelligence'}
           </p>

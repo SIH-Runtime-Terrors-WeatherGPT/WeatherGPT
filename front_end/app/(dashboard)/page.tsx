@@ -97,9 +97,9 @@ export default function DashboardPage() {
             <img src="/logo.png" alt="Logo" className="mt-2 object-cover" />
           </div>
           <div>
-            <h1 className="text-base font-bold bg-gradient-to-r from-blue-400 via-cyan-300 to-emerald-300 bg-clip-text text-transparent">
-              WeatherGPT
-            </h1>
+            <div className="relative w-60 h-15 ms-18">
+              <img src="/weatherGPT.png" alt="WeatherGPT Logo" className="w-full h-full" />
+            </div>
             <p className="text-[10px] text-slate-400 hidden sm:block">
               A CLEARER CONVERSATION
               WITH THE ATMOSPHERE
