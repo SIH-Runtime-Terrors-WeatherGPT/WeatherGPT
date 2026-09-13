@@ -376,20 +376,20 @@ export class GeminiService {
       };
     }
 
-    const systemInstruction = `You are the WeatherGPT natural language entity extraction engine.
-Your task is to break down ANY natural-language weather prompt into structured JSON parameters.
+    const systemInstruction = `You are the WeatherGPT natural language entity & location extraction engine powered by Google Gemini.
+Your task is to break down ANY user prompt (simple, complex, multi-word, implicit, regional, landmark-based, activity-focused) into structured JSON parameters.
 Do NOT answer the user's question. ONLY extract the structured parameters.
 
-ENTITY EXTRACTION INSTRUCTIONS:
-- target_place: Primary place, landmark, temple, monument, beach, park, stadium, neighborhood, or city name mentioned (e.g. "Sun Temple", "Taj Mahal", "Statue of Unity", "Wakad", "Jamnagar", "Mumbai"). Do NOT include prepositions ("in", "near", "at"), date words, or activity names.
-- nearby_reference: Nearby reference city, district, or region mentioned alongside the target place (e.g. for "Sun Temple near Mehsana", target_place is "Sun Temple" and nearby_reference is "Mehsana"; for "Wakad in Pune", target_place is "Wakad" and nearby_reference is "Pune"). Else null.
-- country: ISO 2-letter country code if mentioned or inferable (e.g. "IN", "US", "UK"), else null.
+ENTITY & LOCATION EXTRACTION INSTRUCTIONS:
+- target_place: Primary named location, landmark, temple, monument, beach, park, stadium, airport, neighborhood, mountain, lake, region, or city name mentioned (e.g. "Sun Temple", "Taj Mahal", "Baga Beach", "Wakad", "Chinnaswamy Stadium", "Jamnagar", "Mumbai", "London", "Tokyo"). Do NOT include prepositions ("in", "near", "at", "for"), date words, or activity names.
+- nearby_reference: Nearby reference city, district, or parent region mentioned alongside the target place (e.g. for "Sun Temple near Mehsana", target_place is "Sun Temple" and nearby_reference is "Mehsana"; for "Wakad in Pune", target_place is "Wakad" and nearby_reference is "Pune"). Else null.
+- country: ISO 2-letter country code if mentioned or inferable (e.g. "IN", "US", "GB", "FR"), else null.
 - intent: "current" | "forecast" | "alerts"
-- date: Exact date or natural expression mentioned in prompt e.g. "today", "tomorrow", "day after tomorrow", "this weekend", "20th october", "20 sep", "23 sept", "19/09", "after 4 days", or null if not mentioned.
+- date: Exact date or natural expression mentioned in prompt (e.g. "today", "tomorrow", "day after tomorrow", "this weekend", "next Monday", "20th october", "20 sep", "after 4 days"), or null if not specified.
 - dateOffset: Integer number of days relative to today if explicitly stated (e.g. 1 for tomorrow, 2 for day after tomorrow, 4 for after 4 days), else null.
 - time_period: "morning" | "afternoon" | "evening" | "night" | null
-- activity: Specific activity, trip, or event mentioned (e.g. "sightseeing", "cricket match", "biking", "visit", "picnic", "carrying umbrella", "wedding"), else null.
-- requested_data: Array of relevant weather parameters requested: ["temperature", "rain", "precipitation_probability", "wind_speed", "weather_condition", "humidity"].
+- activity: Specific activity, trip, or event mentioned (e.g. "sightseeing", "cricket match", "biking", "beach trip", "picnic", "carrying umbrella", "wedding", "outdoor event"), else null.
+- requested_data: Array of relevant weather parameters requested: ["temperature", "rain", "precipitation_probability", "wind_speed", "weather_condition", "humidity", "uv_index", "pressure"].
 
 Return valid JSON matching this schema:
 {
@@ -404,16 +404,20 @@ Return valid JSON matching this schema:
   "requested_data": ["string"]
 }`;
 
-    const candidateModels = [
-      'gemini-3.6-flash',
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash-latest',
-      'gemini-1.5-flash',
-      'gemini-1.5-pro-latest',
-      'gemini-1.5-pro',
-      'gemini-2.0-flash-exp',
-    ];
+    const configuredModel = this.configService.get<string>('GEMINI_MODEL')?.trim();
+    const candidateModels = Array.from(
+      new Set([
+        ...(configuredModel ? [configuredModel] : []),
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+        'gemini-1.5-pro',
+        'gemini-1.5-pro-latest',
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-2.0-flash-exp',
+      ])
+    );
 
     for (const modelName of candidateModels) {
       try {
@@ -610,16 +614,20 @@ Actual OpenWeather Facts:
 
 Generate a unique, friendly, and practical response now.`;
 
-    const candidateModels = [
-      'gemini-3.6-flash',
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash-latest',
-      'gemini-1.5-flash',
-      'gemini-1.5-pro-latest',
-      'gemini-1.5-pro',
-      'gemini-2.0-flash-exp',
-    ];
+    const configuredModel = this.configService.get<string>('GEMINI_MODEL')?.trim();
+    const candidateModels = Array.from(
+      new Set([
+        ...(configuredModel ? [configuredModel] : []),
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+        'gemini-1.5-pro',
+        'gemini-1.5-pro-latest',
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-2.0-flash-exp',
+      ])
+    );
     let lastError: any = null;
     let emptyResponseReturned = false;
 
