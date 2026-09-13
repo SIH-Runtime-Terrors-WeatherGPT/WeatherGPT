@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, Sparkles, RefreshCw, MapPin } from 'lucide-react';
+import { Send, Bot, Sparkles, RefreshCw, MapPin, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { ChatMessage } from '@/types/api';
 import { MapLayerType } from '../weather-map/WeatherLegend';
 
@@ -30,15 +30,97 @@ export function ChatPanel({
   onLocationUpdate,
 }: ChatPanelProps) {
   const [inputMsg, setInputMsg] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(true);
+  const [speakingMsgIndex, setSpeakingMsgIndex] = useState<number | null>(null);
+  const recognitionRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event: any) => {
+          let transcript = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript;
+          }
+          if (transcript) {
+            setInputMsg(transcript);
+          }
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognition.onerror = (event: any) => {
+          console.warn('Voice speech recognition error:', event.error);
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+      } else {
+        setSpeechSupported(false);
+      }
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert('Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.');
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (err) {
+        console.error('Failed to start voice recognition:', err);
+      }
+    }
+  };
+
+  const handleSpeakMessage = (index: number, text: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    if (speakingMsgIndex === index) {
+      window.speechSynthesis.cancel();
+      setSpeakingMsgIndex(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.onend = () => setSpeakingMsgIndex(null);
+    utterance.onerror = () => setSpeakingMsgIndex(null);
+
+    setSpeakingMsgIndex(index);
+    window.speechSynthesis.speak(utterance);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMsg.trim() || sending) return;
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
     onSendMessage(inputMsg.trim());
     setInputMsg('');
   };
@@ -52,26 +134,6 @@ export function ChatPanel({
   return (
     <div className="flex flex-col h-full rounded-3xl backdrop-blur-xl bg-slate-900/80 border border-white/15 shadow-2xl overflow-hidden text-slate-100">
       
-      {/* Header */}
-      {/* <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.03]">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8">
-            <img src="/logo.png" alt="WeatherGPT Logo" className="w-full h-full object-cover" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-sm text-slate-100">WeatherGPT</h3>
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-              </span>
-            </div>
-            <p className="text-[10px] text-slate-400">Conversational Meteorological Intelligence</p>
-          </div>
-        </div>
-
-      </div> */}
-
       {/* Message Stream */}
       <div className="flex-1 p-4 overflow-y-auto space-y-4">
         {messages.length === 0 ? (
@@ -101,13 +163,27 @@ export function ChatPanel({
               className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
             >
               <div
-                className={`max-w-[88%] rounded-2xl p-3.5 text-xs leading-relaxed ${
+                className={`max-w-[88%] rounded-2xl p-3.5 text-xs leading-relaxed relative group ${
                   msg.role === 'user'
                     ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-tr-none shadow-md'
                     : 'bg-slate-800/80 text-slate-200 border border-white/10 rounded-tl-none shadow-lg'
                 }`}
               >
                 {msg.content}
+
+                {msg.role === 'assistant' && (
+                  <button
+                    onClick={() => handleSpeakMessage(index, msg.content)}
+                    title={speakingMsgIndex === index ? 'Stop reading' : 'Read forecast aloud'}
+                    className="ml-2 inline-flex items-center justify-center p-1 rounded-lg hover:bg-white/10 text-cyan-400 transition"
+                  >
+                    {speakingMsgIndex === index ? (
+                      <VolumeX className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5 opacity-70 hover:opacity-100" />
+                    )}
+                  </button>
+                )}
               </div>
 
               {msg.locationContext && (
@@ -136,15 +212,38 @@ export function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Box */}
-      <form onSubmit={handleSubmit} className="p-3 border-t border-white/10 flex gap-2 bg-slate-950/60">
+      {/* Input Box with Voice Prompt & Send */}
+      <form onSubmit={handleSubmit} className="p-3 border-t border-white/10 flex gap-2 bg-slate-950/60 items-center">
         <input
           type="text"
-          placeholder="Ask about weather, rain, temperature, or activities..."
+          placeholder={isListening ? 'Listening to your voice prompt...' : 'Ask about weather, rain, temperature, or activities...'}
           value={inputMsg}
           onChange={(e) => setInputMsg(e.target.value)}
-          className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-400 transition"
+          className={`flex-1 px-4 py-2.5 rounded-xl border text-xs text-slate-100 placeholder-slate-400 focus:outline-none transition ${
+            isListening
+              ? 'bg-red-500/10 border-red-500/50 text-red-200 placeholder-red-400 animate-pulse ring-2 ring-red-500/30'
+              : 'bg-white/5 border-white/10 focus:border-cyan-400'
+          }`}
         />
+
+        {/* Voice Input Microphone Button */}
+        <button
+          type="button"
+          onClick={toggleListening}
+          title={isListening ? 'Stop listening' : 'Speak your query (Voice Prompt)'}
+          className={`px-3 py-2.5 rounded-xl text-xs transition flex items-center justify-center ${
+            isListening
+              ? 'bg-red-500 hover:bg-red-600 text-white animate-bounce shadow-lg shadow-red-500/30'
+              : 'bg-white/10 hover:bg-white/20 text-slate-300 hover:text-cyan-400 border border-white/10'
+          }`}
+        >
+          {isListening ? (
+            <MicOff className="w-4 h-4 animate-spin" />
+          ) : (
+            <Mic className="w-4 h-4" />
+          )}
+        </button>
+
         <button
           type="submit"
           disabled={sending || !inputMsg.trim()}

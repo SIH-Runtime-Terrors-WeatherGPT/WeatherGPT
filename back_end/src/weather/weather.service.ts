@@ -16,7 +16,6 @@ import { throwError } from 'rxjs';
 import { RedisService } from '../cache/redis.service';
 import { GeminiService } from '../gemini/gemini.service';
 import { OllamaService } from '../ollama/ollama.service';
-import { DateResolverService } from '../common/services/date-resolver.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import {
@@ -59,7 +58,6 @@ export class WeatherService {
     private readonly redis: RedisService,
     private readonly geminiService: GeminiService,
     private readonly ollamaService: OllamaService,
-    private readonly dateResolverService: DateResolverService,
     private readonly locationResolverService: LocationResolverService,
     private readonly prisma: PrismaService,
     private readonly conversationsService: ConversationsService,
@@ -97,21 +95,10 @@ export class WeatherService {
     const intent = await this.geminiService.extractWeatherIntent(userPrompt);
     this.logger.log(`[Pipeline Step 1] Gemini Extracted Intent: ${JSON.stringify(intent)}`);
 
-    // Step 1b: Map Location Fallback if prompt does NOT specify a location in text or uses generic relative terms
-    const isGenericLocation = (locStr: string | null | undefined): boolean => {
-      if (!locStr) return true;
-      const lower = locStr.toLowerCase().trim();
-      const genericWords = [
-        'give', 'show', 'tell', 'here', 'this area', 'this location', 'my location',
-        'current location', 'near here', 'selected location', 'pointer location',
-        'the location', 'this place', 'area'
-      ];
-      return genericWords.includes(lower);
-    };
-
+    // Step 1b: Map Location Fallback if prompt does NOT specify a location in text
     const isMapFallbackUsed =
-      (!intent.target_place || isGenericLocation(intent.target_place)) &&
-      (!intent.location || intent.location.trim() === '' || isGenericLocation(intent.location)) &&
+      (!intent.target_place || intent.target_place.trim() === '') &&
+      (!intent.location || intent.location.trim() === '') &&
       mapLocation &&
       (mapLocation.name || mapLocation.lat !== undefined);
 
@@ -182,16 +169,9 @@ export class WeatherService {
       };
     }
 
-    // Step 3: Date Resolution (Supports specific dates and date ranges)
-    const todayDate = this.dateResolverService.resolveTemporal({ date: 'today' }).date || new Date().toISOString().split('T')[0];
-
-    let targetDate: string;
-    if (intent.startDate) {
-      targetDate = intent.startDate;
-    } else {
-      const resolvedTemporal = this.dateResolverService.resolveTemporal({ date: intent.date });
-      targetDate = resolvedTemporal.date || todayDate;
-    }
+    // Step 3: Date Resolution (Pulls YYYY-MM-DD directly from Gemini AI Model NLU)
+    const todayDate = new Date().toISOString().split('T')[0];
+    const targetDate = intent.startDate || intent.date || todayDate;
 
     if (intent.isDateRange && intent.startDate && intent.endDate) {
       intent.date = `${intent.startDate} to ${intent.endDate}`;
@@ -359,7 +339,7 @@ export class WeatherService {
       intent: 'current',
       requested_data: ['temperature'],
     });
-    const todayDate = this.dateResolverService.resolveTemporal({ date: 'today' }).date || new Date().toISOString().split('T')[0];
+    const todayDate = new Date().toISOString().split('T')[0];
     const targetDate = date ? date.trim() : todayDate;
     return this.getRelevantWeatherByCoords(resolved, targetDate);
   }

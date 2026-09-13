@@ -12,6 +12,8 @@ import { throwError } from 'rxjs';
 import { RedisService } from '../../cache/redis.service';
 import { WeatherIntentSchema } from '../../gemini/gemini.service';
 
+
+
 export interface LocationCandidate {
   name: string;
   displayName: string;

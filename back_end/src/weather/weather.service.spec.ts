@@ -15,7 +15,6 @@ import { WeatherService } from './weather.service';
 import { RedisService } from '../cache/redis.service';
 import { GeminiService } from '../gemini/gemini.service';
 import { OllamaService } from '../ollama/ollama.service';
-import { DateResolverService } from '../common/services/date-resolver.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { LocationResolverService } from './services/location-resolver.service';
@@ -56,6 +55,7 @@ describe('WeatherService', () => {
         country: 'GB',
         intent: 'forecast',
         date: 'tomorrow',
+        startDate: '2026-09-13',
         requested_data: ['rain'],
       }),
       generatePracticalRecommendation: jest.fn().mockResolvedValue('Gemini recommendation answer'),
@@ -63,10 +63,6 @@ describe('WeatherService', () => {
 
     const mockOllama = {
       generateAnswer: jest.fn().mockResolvedValue('Ollama conversational answer'),
-    };
-
-    const mockDateResolver = {
-      resolveTemporal: jest.fn().mockReturnValue({ date: '2026-09-13' }),
     };
 
     const mockLocationResolver = {
@@ -98,7 +94,6 @@ describe('WeatherService', () => {
         { provide: HttpService, useValue: mockHttp },
         { provide: GeminiService, useValue: mockGemini },
         { provide: OllamaService, useValue: mockOllama },
-        { provide: DateResolverService, useValue: mockDateResolver },
         { provide: LocationResolverService, useValue: mockLocationResolver },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ConversationsService, useValue: mockConversations },

@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { GeminiService } from './gemini.service';
 import { WeatherData } from '../weather/weather.types';
-import { DateResolverService } from '../common/services/date-resolver.service';
 
 const mockGenerateContent = jest.fn();
 const mockGetGenerativeModel = jest.fn().mockImplementation(() => ({
@@ -38,7 +37,6 @@ describe('GeminiService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GeminiService,
-        DateResolverService,
         {
           provide: ConfigService,
           useValue: {
