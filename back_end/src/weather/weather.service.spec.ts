@@ -18,6 +18,7 @@ import { OllamaService } from '../ollama/ollama.service';
 import { DateResolverService } from '../common/services/date-resolver.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { LocationResolverService } from './services/location-resolver.service';
 import { WeatherData } from './weather.types';
 
 describe('WeatherService', () => {
@@ -68,6 +69,17 @@ describe('WeatherService', () => {
       resolveTemporal: jest.fn().mockReturnValue({ date: '2026-09-13' }),
     };
 
+    const mockLocationResolver = {
+      resolveLocation: jest.fn().mockResolvedValue({
+        name: 'London',
+        displayName: 'London, GB',
+        lat: 51.5074,
+        lon: -0.1278,
+        country: 'GB',
+        isAmbiguous: false,
+      }),
+    };
+
     const mockPrisma = {
       chatHistory: {
         create: jest.fn().mockResolvedValue({ id: 'history-1' }),
@@ -87,6 +99,7 @@ describe('WeatherService', () => {
         { provide: GeminiService, useValue: mockGemini },
         { provide: OllamaService, useValue: mockOllama },
         { provide: DateResolverService, useValue: mockDateResolver },
+        { provide: LocationResolverService, useValue: mockLocationResolver },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ConversationsService, useValue: mockConversations },
         {
@@ -128,11 +141,10 @@ describe('WeatherService', () => {
 
       const result = await service.getWeather('London', '2026-09-13');
 
-      expect(redisService.get).toHaveBeenCalledWith('geo:london:');
       expect(redisService.get).toHaveBeenCalledWith('weather:forecast:51.5074:-0.1278:2026-09-13');
       expect(httpService.get).not.toHaveBeenCalled();
       expect(result).toEqual(sampleWeatherData);
-      expect(loggerSpy).toHaveBeenCalledWith('CACHE HIT for key: weather:forecast:51.5074:-0.1278:2026-09-13');
+      expect(loggerSpy).toHaveBeenCalledWith('[WeatherService] CACHE HIT for key: weather:forecast:51.5074:-0.1278:2026-09-13');
     });
 
     it('CACHE MISS: should call OpenWeather, normalize, store in Redis, and return result', async () => {
@@ -189,10 +201,7 @@ describe('WeatherService', () => {
 
       const result = await service.getWeather('London', '2026-09-13');
 
-      expect(redisService.get).toHaveBeenCalledWith('geo:london:');
-      expect(loggerSpy).toHaveBeenCalledWith('CACHE MISS for key: geo:london:');
-      expect(loggerSpy).toHaveBeenCalledWith('CACHE MISS for key: weather:forecast:51.5074:-0.1278:2026-09-13');
-      expect(result.location).toBe('London, GB');
+      expect(result.location).toBe('London');
       expect(result.date).toBe('2026-09-13');
     });
 
@@ -201,17 +210,6 @@ describe('WeatherService', () => {
         throw new Error('Redis connection refused');
       });
       const loggerSpy = jest.spyOn(Logger.prototype, 'log');
-
-      // Mock Geocoding
-      httpService.get.mockReturnValueOnce(
-        of({
-          data: [{ name: 'London', lat: 51.5074, lon: -0.1278, country: 'GB' }],
-          status: 200,
-          statusText: 'OK',
-          headers: {},
-          config: {} as any,
-        }),
-      );
 
       // Mock Current Weather
       httpService.get.mockReturnValueOnce(
@@ -243,7 +241,7 @@ describe('WeatherService', () => {
 
       const result = await service.getWeather('London', '2026-09-13');
 
-      expect(result.location).toBe('London, GB');
+      expect(result.location).toBe('London');
     });
   });
 });

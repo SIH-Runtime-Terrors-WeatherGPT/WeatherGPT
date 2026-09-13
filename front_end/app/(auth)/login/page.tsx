@@ -22,17 +22,36 @@ export default function LoginPage() {
     const payload = isLogin ? { email, password } : { name, email, password };
 
     try {
-      const res = await apiClient<{ accessToken?: string; token?: string; user: any }>(endpoint, {
+      const res = await apiClient<{ accessToken?: string; token?: string; access_token?: string; user?: any }>(endpoint, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
 
-      const token = res.data?.accessToken || res.data?.token;
+      const dataObj = res.data || (res as any);
+      let token = dataObj?.accessToken || dataObj?.token || dataObj?.access_token;
+
+      // If registering and backend returned user without direct token, auto-login
+      if (!token && !isLogin) {
+        try {
+          const loginRes = await apiClient<{ accessToken?: string; token?: string; access_token?: string }>('/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password }),
+          });
+          const loginData = loginRes.data || (loginRes as any);
+          token = loginData?.accessToken || loginData?.token || loginData?.access_token;
+        } catch {
+          // If auto-login fails (e.g. duplicate user registered earlier), prompt user to sign in
+          setIsLogin(true);
+          setError('Account created! Please sign in with your credentials.');
+          return;
+        }
+      }
+
       if (token) {
         localStorage.setItem('weathergpt_token', token);
         router.push('/dashboard');
       } else {
-        throw new Error('Invalid token response from server');
+        throw new Error('Could not authenticate session. Please try logging in.');
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
@@ -55,13 +74,13 @@ export default function LoginPage() {
       {/* Glassmorphic Form Card */}
       <div className="w-full max-w-md p-8 rounded-2xl backdrop-blur-2xl bg-slate-900/60 border border-white/10 shadow-2xl z-10 transition-all">
         <div className="text-center mb-8">
-          <div className="inline-flex w-14 h-14 rounded-2xl overflow-hidden border border-cyan-400/30 bg-slate-800/80 mb-3 shadow-lg shadow-cyan-500/10 p-1">
-            <img src="/weatherGPT.png" alt="WeatherGPT Logo" className="w-full h-full object-cover rounded-xl" />
+          <div className="inline-flex w-14 h-14 overflow-hidden">
+            <img src="/logo.png" alt="Logo" className="w-full h-full " />
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
             WeatherGPT
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-slate-400">
             {isLogin ? 'Access your AI-powered meteorological hub' : 'Create an account for hyper-local climate intelligence'}
           </p>
         </div>

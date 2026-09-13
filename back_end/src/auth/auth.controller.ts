@@ -16,7 +16,7 @@ export class AuthController {
    */
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  register(@Body() dto: RegisterDto): Promise<SafeUser> {
+  register(@Body() dto: RegisterDto): Promise<LoginResponse> {
     return this.authService.register(dto);
   }
 

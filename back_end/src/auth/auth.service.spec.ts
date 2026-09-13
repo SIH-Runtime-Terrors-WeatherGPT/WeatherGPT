@@ -63,11 +63,14 @@ describe('AuthService', () => {
         where: { email: 'dhruv@example.com' },
       });
       expect(result).toEqual({
-        id: 'user_123',
-        name: 'Dhruv',
-        email: 'dhruv@example.com',
+        accessToken: 'mock_jwt_token',
+        user: {
+          id: 'user_123',
+          name: 'Dhruv',
+          email: 'dhruv@example.com',
+        },
       });
-      expect((result as any).passwordHash).toBeUndefined();
+      expect((result.user as any).passwordHash).toBeUndefined();
     });
 
     it('should throw ConflictException if email is already registered', async () => {

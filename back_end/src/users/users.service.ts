@@ -31,7 +31,7 @@ export class UsersService {
     });
 
     if (!user) {
-      return { id, name: 'WeatherGPT User', email: 'user@weathergpt.com' };
+      throw new NotFoundException(`User with ID "${id}" not found`);
     }
 
     return user;

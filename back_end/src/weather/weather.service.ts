@@ -486,13 +486,13 @@ export class WeatherService {
       windSpeed = targetItems[0].wind?.speed ?? current.wind?.speed ?? 0;
       humidity = targetItems[0].main?.humidity ?? current.main?.humidity ?? 0;
     } else {
-      temp = current.main.temp;
-      tempHigh = current.main.temp_max;
-      tempLow = current.main.temp_min;
+      temp = current?.main?.temp ?? 0;
+      tempHigh = current?.main?.temp_max ?? temp;
+      tempLow = current?.main?.temp_min ?? temp;
       rainProb = 0;
-      condition = current.weather?.[0]?.description ?? 'unknown';
-      windSpeed = current.wind?.speed ?? 0;
-      humidity = current.main?.humidity ?? 0;
+      condition = current?.weather?.[0]?.description ?? 'unknown';
+      windSpeed = current?.wind?.speed ?? 0;
+      humidity = current?.main?.humidity ?? 0;
     }
 
     return {
