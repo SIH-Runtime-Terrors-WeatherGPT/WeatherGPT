@@ -1,7 +1,7 @@
 import { ApiResponse } from '@/types/api';
 
 const getBaseUrl = (): string => {
-  const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'https://weathergpt-owqw.onrender.com';
   return rawUrl.replace(/\/+$/, '');
 };
 
