@@ -91,19 +91,15 @@ export default function DashboardPage() {
     <div className="h-screen w-screen bg-slate-950 text-slate-100 flex flex-col overflow-hidden font-sans">
 
       {/* Top Navbar */}
-      <header className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-slate-950/80 backdrop-blur-xl shrink-0 z-20">
+      <header className="h-14 px-6 flex items-center justify-between bg-slate-950/80 backdrop-blur-xl shrink-0 z-20">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 ">
             <img src="/logo.png" alt="Logo" className="mt-2 object-cover" />
           </div>
           <div>
-            <div className="relative w-60 h-15 ms-18">
+            <div className="relative w-60 h-15">
               <img src="/weatherGPT.png" alt="WeatherGPT Logo" className="w-full h-full" />
             </div>
-            <p className="text-[10px] text-slate-400 hidden sm:block">
-              A CLEARER CONVERSATION
-              WITH THE ATMOSPHERE
-            </p>
           </div>
         </div>
 
