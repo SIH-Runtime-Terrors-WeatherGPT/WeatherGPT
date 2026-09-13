@@ -269,7 +269,7 @@ export default function WeatherMapInner({
 
         {/* Interactive Location Marker & Weather Summary Popup */}
         {marker && (
-          <Marker position={[marker.lat, marker.lon]} ref={(r) => r?.openPopup()}>
+          <Marker position={[marker.lat, marker.lon]} ref={(r) => { r?.openPopup(); }}>
             <Popup className="custom-weather-popup" autoPan={true} closeButton={false}>
               <div
                 className="p-3 min-w-[190px] bg-slate-950 text-slate-100 rounded-2xl font-sans"
