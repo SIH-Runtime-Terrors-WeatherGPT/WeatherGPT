@@ -15,6 +15,9 @@ export function useAuth() {
     if (!token) {
       setUser(null);
       setLoading(false);
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        router.replace('/login');
+      }
       return;
     }
 
@@ -24,12 +27,17 @@ export function useAuth() {
       if (userData && userData.id) {
         setUser(userData);
       } else {
-        setUser({ id: 'demo', name: 'SIH Demo Judge', email: 'demo@weathergpt.com' });
+        throw new Error('Invalid user profile');
       }
     } catch (err) {
-      console.warn('Profile fetch warning:', err);
-      // Keep existing token if present
-      setUser({ id: 'demo', name: 'SIH Demo Judge', email: 'demo@weathergpt.com' });
+      console.warn('Authentication check failed:', err);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('weathergpt_token');
+      }
+      setUser(null);
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        router.replace('/login');
+      }
     } finally {
       setLoading(false);
     }

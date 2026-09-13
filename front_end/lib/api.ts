@@ -35,6 +35,16 @@ export async function apiClient<T>(
 
   const payload = await response.json();
 
+  if (response.status === 401) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('weathergpt_token');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    throw new Error('Session expired. Please log in again.');
+  }
+
   if (!response.ok) {
     const errorMsg =
       (Array.isArray(payload.message) ? payload.message.join(', ') : payload.message) ||

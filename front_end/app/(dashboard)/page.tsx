@@ -7,9 +7,11 @@ import { MapLayerType } from '@/components/weather-map/WeatherLegend';
 import { LocationMarkerData } from '@/components/weather-map/WeatherMapInner';
 import { ChatPanel } from '@/components/chatbot/ChatPanel';
 import { CloudSun, User, LogOut, Compass } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
 
 export default function DashboardPage() {
+  const { user, loading } = useAuth();
   const { messages, sending, sendMessage, latestQueryResult } = useChat();
   const [mapCenter, setMapCenter] = useState<[number, number]>([23.0225, 72.5714]); // Ahmedabad default
   const [mapZoom, setMapZoom] = useState<number>(7);
@@ -69,6 +71,21 @@ export default function DashboardPage() {
       window.location.href = '/login';
     }
   };
+
+  if (loading) {
+    return (
+      <div className="h-screen w-screen bg-slate-950 flex items-center justify-center text-slate-100 font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <span className="h-6 w-6 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+          <span className="text-xs text-slate-400 font-mono">Authenticating session...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="h-screen w-screen bg-slate-950 text-slate-100 flex flex-col overflow-hidden font-sans">
