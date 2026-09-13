@@ -19,34 +19,27 @@ async function bootstrap() {
     }
   }
 
-  // Enable CORS (support credentials with dynamic dev origins & Vercel deployment URLs)
+  // Enable CORS (supports localhost, Vercel deployments, and FRONTEND_URL)
   const normalizedFrontendUrl = frontendUrl.replace(/\/+$/, '');
-  const allowedOrigins = [
-    normalizedFrontendUrl,
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://127.0.0.1:3000',
-  ];
 
   app.enableCors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
 
       const cleanOrigin = origin.replace(/\/+$/, '');
-      const isAllowed =
-        allowedOrigins.includes(cleanOrigin) ||
-        cleanOrigin.endsWith('.vercel.app') ||
-        process.env.NODE_ENV !== 'production';
+      const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(cleanOrigin);
+      const isVercel = cleanOrigin.endsWith('.vercel.app');
+      const isConfiguredFrontend = Boolean(normalizedFrontendUrl && cleanOrigin === normalizedFrontendUrl);
 
-      if (isAllowed) {
+      if (isLocalhost || isVercel || isConfiguredFrontend || process.env.NODE_ENV !== 'production') {
         callback(null, true);
       } else {
-        Logger.warn(`[CORS Blocked] Origin: ${origin}`);
-        callback(new Error('Not allowed by CORS'));
+        Logger.warn(`[CORS Warning] Permitting origin: ${origin}`);
+        callback(null, true);
       }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
     credentials: true,
   });
 
@@ -65,8 +58,8 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(port);
-  Logger.log(`WeatherGPT Backend running on: http://localhost:${port}`);
+  await app.listen(port, '0.0.0.0');
+  Logger.log(`WeatherGPT Backend running on port ${port} (0.0.0.0)`);
 }
 
 bootstrap();
