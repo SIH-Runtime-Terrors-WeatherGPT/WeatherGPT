@@ -19,9 +19,10 @@ async function bootstrap() {
     }
   }
 
-  // Enable CORS (support credentials with dynamic dev origins)
+  // Enable CORS (support credentials with dynamic dev origins & Vercel deployment URLs)
+  const normalizedFrontendUrl = frontendUrl.replace(/\/+$/, '');
   const allowedOrigins = [
-    frontendUrl,
+    normalizedFrontendUrl,
     'http://localhost:3000',
     'http://localhost:5173',
     'http://127.0.0.1:3000',
@@ -29,13 +30,23 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+      if (!origin) return callback(null, true);
+
+      const cleanOrigin = origin.replace(/\/+$/, '');
+      const isAllowed =
+        allowedOrigins.includes(cleanOrigin) ||
+        cleanOrigin.endsWith('.vercel.app') ||
+        process.env.NODE_ENV !== 'production';
+
+      if (isAllowed) {
         callback(null, true);
       } else {
+        Logger.warn(`[CORS Blocked] Origin: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     credentials: true,
   });
 

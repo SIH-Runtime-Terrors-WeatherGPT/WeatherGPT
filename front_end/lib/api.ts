@@ -1,12 +1,18 @@
 import { ApiResponse } from '@/types/api';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const getBaseUrl = (): string => {
+  const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  return rawUrl.replace(/\/+$/, '');
+};
 
 export async function apiClient<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('weathergpt_token') : null;
+  const baseUrl = getBaseUrl();
+  const formattedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const fullUrl = `${baseUrl}${formattedEndpoint}`;
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -14,10 +20,18 @@ export async function apiClient<T>(
     ...options.headers,
   };
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(fullUrl, {
+      ...options,
+      headers,
+    });
+  } catch (err: any) {
+    console.error(`[API Error] Failed to fetch from ${fullUrl}:`, err);
+    throw new Error(
+      `Failed to connect to backend server (${fullUrl}). Please ensure NEXT_PUBLIC_API_URL environment variable is configured correctly and CORS is enabled.`
+    );
+  }
 
   const payload = await response.json();
 
